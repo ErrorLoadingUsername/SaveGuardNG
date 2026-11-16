@@ -1,0 +1,19 @@
+# build output
+build/
+out/
+.vs/
+*.user
+CMakeUserPresets.json
+
+# binaries and release packages (published as GitHub releases / on Nexus)
+releases/
+*.dll
+*.pdb
+*.zip
+*.7z
+
+# third-party header, see include/README.md
+include/SKSEMenuFramework.h
+
+# local backups
+*.bak*

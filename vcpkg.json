@@ -1,0 +1,8 @@
+{
+  "name": "saveguard",
+  "version-string": "1.1.6.1",
+  "dependencies": [
+    "commonlibsse-ng",
+    "spdlog"
+  ]
+}
