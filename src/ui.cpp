@@ -94,6 +94,17 @@ namespace
 			EndTable();
 		}
 
+		if (sg::g_otherSaverFound) {
+			SeparatorText(sg::L("Kompatibilitaet", "Compatibility"));
+			TextColored(LevelColor(1), "%s", sg::L("Safer Saving SKSE ist installiert.", "Safer Saving SKSE is installed."));
+			Toggle(sg::L("Nur warnen (Safer Saving speichert)", "Warnings only (Safer Saving does the saving)"), sg::g_respectOtherSavers);
+			TextWrapped("%s", sg::WarningsOnly() ?
+				sg::L("Schnellspeicher-Schutz und Autospeichern von SaveGuard sind aus - Safer Saving wuerde diese Speichervorgaenge sonst blockieren. Die Warnungen bleiben an.",
+					"SaveGuard's quicksave guard and autosaves are off - Safer Saving would block those saves otherwise. Warnings stay on.") :
+				sg::L("Beide speichern - Safer Saving kann die Speichervorgaenge von SaveGuard blockieren (siehe \"Blockiert\" unten).",
+					"Both are saving - Safer Saving can block SaveGuard's saves (see \"Blocked\" below)."));
+		}
+
 		SeparatorText(sg::L("Einstellungen", "Settings"));
 		{
 			int lang = sg::g_english ? 1 : 0;
@@ -124,7 +135,7 @@ namespace
 
 		SeparatorText(sg::L("Autospeichern - Bedingungen", "Autosave - conditions"));
 		TextDisabled("%s", sg::L("Immer: nur wenn sicher, nicht im Kampf. Sonst wird gewartet.", "Always: only when safe, not in combat. Otherwise it waits."));
-		Toggle(sg::L("Nicht waehrend Szenen (Steuerung gesperrt, z. B. OStim)", "Not during scenes (controls disabled, e.g. OStim)"), sg::g_autoSkipScenes);
+		Toggle(sg::L("Nicht waehrend Szenen (OStim, Steuerung gesperrt)", "Not during scenes (OStim, controls disabled)"), sg::g_autoSkipScenes);
 		Toggle(sg::L("Nicht beim Schleichen", "Not while sneaking"), sg::g_autoSkipSneak);
 		Toggle(sg::L("Nicht beim Reiten", "Not while riding"), sg::g_autoSkipMount);
 		Toggle(sg::L("Nicht im Gefaengnis", "Not in jail"), sg::g_autoSkipJail);
@@ -140,8 +151,12 @@ namespace
 		SeparatorText(sg::L("Autospeichern - Zustand", "Autosave - state"));
 		Text(sg::L("Zustand: %s", "State: %s"), (s.autoSaveState == "bereit" || s.autoSaveState == "ready") ? sg::L("bereit", "ready") : s.autoSaveState.c_str());
 		Text(sg::L("Letztes Speichern: %s", "Last save: %s"), s.lastAutoSave.c_str());
-		Text(sg::L("Gespeichert: %llu   Uebersprungen: %llu", "Saved: %llu   Skipped: %llu"), static_cast<unsigned long long>(s.autoSaves),
-			static_cast<unsigned long long>(s.autoSavesSkipped));
+		Text(sg::L("Gespeichert: %llu   Uebersprungen: %llu   Blockiert: %llu", "Saved: %llu   Skipped: %llu   Blocked: %llu"), static_cast<unsigned long long>(s.autoSaves),
+			static_cast<unsigned long long>(s.autoSavesSkipped), static_cast<unsigned long long>(s.savesBlocked));
+		if (s.savesBlocked) {
+			TextDisabled("%s", sg::L("Blockiert = gespeichert, aber keine Datei angelegt (eine andere Mod hat es verhindert).",
+				"Blocked = saved, but no file was written (another mod prevented it)."));
+		}
 		TextDisabled("%s", sg::L("Einstellungen werden in SKSE\\SaveGuardNG.ini gespeichert.", "Settings are stored in SKSE\\SaveGuardNG.ini."));
 
 		SeparatorText("Debug");

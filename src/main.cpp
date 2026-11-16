@@ -513,7 +513,62 @@ namespace
 	bool              g_inGame      = false;  // a save was loaded / new game started (not main menu)
 	Clock::time_point g_ignoreLoadingUntil{};
 	Clock::time_point g_lastAutoSave{};       // for the minimum gap
-	Clock::time_point g_lastScene{};          // last time movement controls were disabled
+	Clock::time_point g_lastScene{};          // last time a scene was running / movement was disabled
+
+	// OStim scenes (OStim NG ModEvents ostim_thread_start / ostim_thread_end, numArg = thread ID,
+	// 0 = the player's thread). OStim does not disable the movement controls, so the controls
+	// check alone does not see its scenes. Sent from Papyrus threads -> mutex.
+	std::mutex                                     g_sceneMutex;
+	std::unordered_map<int, Clock::time_point>     g_scenes;  // thread ID -> last event
+
+	// true while a scene runs; drops threads without any event for 30 minutes
+	bool SceneRunning()
+	{
+		std::scoped_lock l(g_sceneMutex);
+		const auto       now = Clock::now();
+		std::erase_if(g_scenes, [&](const auto& a_entry) {
+			if (now - a_entry.second < 30min) {
+				return false;
+			}
+			SKSE::log::warn("[scene] OStim thread {} sent no event for 30 minutes - no longer counted", a_entry.first);
+			return true;
+		});
+		return !g_scenes.empty();
+	}
+
+	class ModCallbackSink final : public RE::BSTEventSink<SKSE::ModCallbackEvent>
+	{
+	public:
+		static ModCallbackSink* Get()
+		{
+			static ModCallbackSink sink;
+			return &sink;
+		}
+		RE::BSEventNotifyControl ProcessEvent(const SKSE::ModCallbackEvent* a_event, RE::BSTEventSource<SKSE::ModCallbackEvent>*) override
+		{
+			if (!a_event || a_event->eventName.empty()) {
+				return RE::BSEventNotifyControl::kContinue;
+			}
+			const std::string_view name = a_event->eventName.c_str();
+			if (!name.starts_with("ostim_thread_")) {
+				return RE::BSEventNotifyControl::kContinue;
+			}
+			const int  id  = static_cast<int>(a_event->numArg);
+			const auto now = Clock::now();
+			std::scoped_lock l(g_sceneMutex);
+			if (name == "ostim_thread_end") {
+				if (g_scenes.erase(id)) {
+					SKSE::log::info("[scene] OStim thread {} ended ({} still running)", id, g_scenes.size());
+				}
+			} else if (name == "ostim_thread_start") {
+				g_scenes[id] = now;
+				SKSE::log::info("[scene] OStim thread {} started{} - no autosave until it ends", id, id == 0 ? " (player)" : "");
+			} else if (auto it = g_scenes.find(id); it != g_scenes.end()) {
+				it->second = now;  // scene / speed changes keep it alive
+			}
+			return RE::BSEventNotifyControl::kContinue;
+		}
+	};
 	std::int64_t      g_playMs         = 0;   // unpaused play time since the last save (timer)
 	Clock::time_point g_lastTick{};
 	float             g_sleepStartDays = -1.0f;
@@ -532,9 +587,25 @@ namespace
 		g_status.autoSaveState = std::move(a_text);
 	}
 
+	// A save SaveGuard started, checked a few seconds later: another mod (e.g. Safer
+	// Saving SKSE) can block it, and then no file is written.
+	struct VerifySave
+	{
+		bool              active{ false };
+		bool              quick{ false };
+		std::string       name;     // file name without .ess
+		std::string       prefix;   // slot, older files are removed once the new one exists
+		std::string       reason;
+		Clock::time_point since{};
+	};
+	VerifySave g_verify;
+
 	void RequestSave(SaveKind a_kind, const char* a_reason)
 	{
 		const auto now = Clock::now();
+		if (a_kind == SaveKind::kAuto && sg::WarningsOnly()) {
+			return;  // another save mod is installed - it does the saving
+		}
 		if (a_kind == SaveKind::kAuto) {
 			if (g_pending.active) {
 				return;  // already waiting for a save
@@ -691,6 +762,10 @@ namespace
 		if (a_player->IsInCombat()) {
 			return sg::L("Kampf", "combat");
 		}
+		if (sg::g_autoSkipScenes && SceneRunning()) {
+			g_lastScene = Clock::now();
+			return sg::L("OStim-Szene", "OStim scene");
+		}
 		if (sg::g_autoSkipScenes && Clock::now() - g_lastScene < 5s) {
 			return sg::L("Szene / Steuerung gesperrt", "scene / controls disabled");
 		}
@@ -793,10 +868,8 @@ namespace
 		SKSE::log::info("[{}] {}: saving {} after {} s ({} finished object(s) left, safe)", quick ? "quicksave" : "autosave",
 			g_pending.reason, name, std::chrono::duration_cast<std::chrono::seconds>(waited).count(), open.size());
 		manager->Save(name.c_str());
-		RemoveOldSlotFiles(prefix, name);
-		if (!quick) {
-			RemoveOldSlotFiles("SaveGuardAuto" + std::to_string(g_autoIndex.load()), name);  // 1.0.x name
-		}
+		// old files of this slot are only removed once the new one is on disk (VerifyLastSave)
+		g_verify = { true, quick, name, prefix, g_pending.reason, Clock::now() };
 
 		g_playMs = 0;
 		if (!quick) {
@@ -824,9 +897,47 @@ namespace
 		return (*reinterpret_cast<const std::uint32_t*>(reinterpret_cast<const std::byte*>(a_map) + offset) & 1u) != 0;
 	}
 
+	// Did the last save SaveGuard started actually reach the disk?
+	void VerifyLastSave()
+	{
+		if (!g_verify.active) {
+			return;
+		}
+		std::error_code ec;
+		const auto      file = SaveDirectory() / (g_verify.name + ".ess");
+		if (std::filesystem::exists(file, ec)) {
+			g_verify.active = false;
+			SKSE::log::info("[save] {}.ess written", g_verify.name);
+			RemoveOldSlotFiles(g_verify.prefix, g_verify.name);
+			if (!g_verify.quick) {
+				RemoveOldSlotFiles("SaveGuardAuto" + std::to_string(g_autoIndex.load()), g_verify.name);  // 1.0.x name
+			}
+			return;
+		}
+		if (Clock::now() - g_verify.since < 15s) {
+			return;  // the game may still be writing
+		}
+		g_verify.active = false;
+		SKSE::log::warn("[save] {}.ess was not written - the save was blocked or failed (another save mod?). Older files of this slot were kept.",
+			g_verify.name);
+		{
+			std::scoped_lock l(g_statusMutex);
+			g_status.savesBlocked++;
+			if (g_status.autoSaves) {
+				g_status.autoSaves--;
+			}
+			g_status.lastAutoSave  = NowString() + "  " + g_verify.prefix + sg::L("  NICHT geschrieben (", "  NOT written (") + g_verify.reason + ")";
+			g_status.autoSaveState = sg::L("letztes Speichern wurde blockiert", "last save was blocked");
+		}
+		RE::DebugNotification(g_verify.quick ?
+			sg::L("SaveGuard: Schnellspeichern wurde NICHT ausgefuehrt (von einer anderen Mod blockiert?)", "SaveGuard: quicksave was NOT made (blocked by another mod?)") :
+			sg::L("SaveGuard: Autospeichern wurde NICHT ausgefuehrt (von einer anderen Mod blockiert?)", "SaveGuard: autosave was NOT made (blocked by another mod?)"));
+	}
+
 	// every unpaused check: scene tracking and the timer
 	void TickSaveTriggers()
 	{
+		VerifyLastSave();
 		const auto now = Clock::now();
 		// time since the last unpaused check, capped so pauses/menus do not count
 		const auto delta = g_lastTick == Clock::time_point{} ? 0 :
@@ -855,7 +966,7 @@ namespace
 
 	bool QuickSaveProcessButton(RE::MenuEventHandler* a_this, RE::ButtonEvent* a_event)
 	{
-		if (sg::g_guardQuicksave && g_storage && a_event && a_event->IsDown()) {
+		if (sg::g_guardQuicksave && !sg::WarningsOnly() && g_storage && a_event && a_event->IsDown()) {
 			auto events = RE::UserEvents::GetSingleton();
 			if (events && a_event->QUserEvent() == events->quicksave) {
 				const auto  open  = Snapshot();
@@ -1168,6 +1279,8 @@ namespace
 				sg::g_autoSkipJail = value != 0;
 			} else if (key == "guardQuicksave") {
 				sg::g_guardQuicksave = value != 0;
+			} else if (key == "warningsOnlyWithOtherSaveMods") {
+				sg::g_respectOtherSavers = value != 0;
 			} else if (key == "english") {
 				sg::g_english = value != 0;
 			} else if (key == "autoSaveLastIndex") {
@@ -1219,7 +1332,7 @@ namespace sg
 			 << "autoSaveTimeout=" << g_autoSaveTimeout.load() << "\n"
 			 << "\n[Conditions]\n"
 			 << "; Autosaves always wait until saving is safe and the player is not in combat.\n"
-			 << "; no autosave while movement controls are disabled (OStim and other scenes) + 5 s\n"
+			 << "; no autosave during OStim scenes (also NPC-only ones) or while movement controls are disabled, + 5 s\n"
 			 << "skipDuringScenes=" << int(g_autoSkipScenes.load()) << "\n"
 			 << "; no autosave while sneaking\n"
 			 << "skipWhileSneaking=" << int(g_autoSkipSneak.load()) << "\n"
@@ -1230,6 +1343,11 @@ namespace sg
 			 << "\n[Quicksave]\n"
 			 << "; hold quicksave (F5) back while saving is not safe and save as soon as it is\n"
 			 << "guardQuicksave=" << int(g_guardQuicksave.load()) << "\n"
+			 << "\n[Compatibility]\n"
+			 << "; Safer Saving SKSE (SaferSaving.dll) blocks saves while you move, fight or are in a menu - also the\n"
+			 << "; saves SaveGuard makes. When it is installed, SaveGuard only warns: quicksave guard and autosaves are\n"
+			 << "; off and Safer Saving does the saving. 0 = keep SaveGuard's quicksave guard and autosaves on anyway.\n"
+			 << "warningsOnlyWithOtherSaveMods=" << int(g_respectOtherSavers.load()) << "\n"
 			 << "\n[Internal]\n"
 			 << "; last autosave slot written - do not change\n"
 			 << "autoSaveLastIndex=" << g_autoIndex.load() << "\n";
@@ -1254,7 +1372,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	SKSE::Init(a_skse);
 	g_skseVersion = a_skse->SKSEVersion();
 	SetupLog();
-	SKSE::log::info("SaveGuard NG 1.1.6.1 loading");
+	SKSE::log::info("SaveGuard NG 1.1.8 loading");
 	g_iniPath = FindLogDir() / "SaveGuardNG.ini";
 	LoadSettings();
 	sg::SaveSettings();  // rewrite with all keys and comments (keeps the loaded values)
@@ -1264,6 +1382,15 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 
 	SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* a_msg) {
 		switch (a_msg->type) {
+		case SKSE::MessagingInterface::kPostLoad:
+			// all SKSE plugins are loaded now
+			if (sg::win::ModuleBase(L"SaferSaving.dll")) {
+				sg::g_otherSaverFound = true;
+				SKSE::log::info("Safer Saving SKSE (SaferSaving.dll) found - {}", sg::g_respectOtherSavers ?
+					"warnings only: quicksave guard and autosaves are off, Safer Saving does the saving" :
+					"warningsOnlyWithOtherSaveMods=0: quicksave guard and autosaves stay on (saves may get blocked)");
+			}
+			break;
 		case SKSE::MessagingInterface::kDataLoaded:
 			sg::RegisterMenu();
 			if (LocateStorage()) {
@@ -1278,6 +1405,9 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 					scripts->AddEventSink<RE::TESWaitStartEvent>(RestSink<RE::TESWaitStartEvent>::Get());
 					scripts->AddEventSink<RE::TESWaitStopEvent>(RestSink<RE::TESWaitStopEvent>::Get());
 				}
+				if (auto modEvents = SKSE::GetModCallbackEventSource()) {
+					modEvents->AddEventSink(ModCallbackSink::Get());
+				}
 				InstallQuickSaveGuard();
 				StartWatch();
 				SKSE::log::info("watching the journal menu and checking every {} ms", std::clamp(sg::g_pollMs.load(), 100, 2000));
@@ -1288,6 +1418,11 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 			g_inGame      = true;
 			g_gameLoading = true;
 			g_pending     = {};
+			g_verify      = {};
+			{
+				std::scoped_lock l(g_sceneMutex);
+				g_scenes.clear();  // OStim ends its threads on load
+			}
 			g_playMs   = 0;
 			g_lastTick = {};
 			break;

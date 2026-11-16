@@ -39,6 +39,7 @@ namespace sg
 		std::string          lastAutoSave{ "-" };
 		std::uint64_t        autoSaves{ 0 };
 		std::uint64_t        autoSavesSkipped{ 0 };
+		std::uint64_t        savesBlocked{ 0 };   // own saves that never reached the disk
 	};
 
 	UiStatus GetStatus();
@@ -66,6 +67,11 @@ namespace sg
 	inline std::atomic<bool> g_autoSkipJail{ true };
 	// quicksave
 	inline std::atomic<bool> g_guardQuicksave{ true };  // hold F5 back while saving is unsafe
+
+	// compatibility with other mods that block or make saves (Safer Saving SKSE)
+	inline std::atomic<bool> g_respectOtherSavers{ true };  // INI: warnings only when one is installed
+	inline std::atomic<bool> g_otherSaverFound{ false };    // detected at startup
+	inline bool WarningsOnly() { return g_otherSaverFound && g_respectOtherSavers; }
 
 	// pick the text for the current language
 	inline const char* L(const char* a_de, const char* a_en) { return g_english ? a_en : a_de; }
