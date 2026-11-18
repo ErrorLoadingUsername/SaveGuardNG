@@ -56,4 +56,4 @@ Dependencies come from vcpkg: [CommonLibSSE-NG](https://github.com/CharmedBaryon
 
 ## License
 
-[MIT](LICENSE)
+[GPL-3.0-or-later](LICENSE) - built with CommonLibSSE NG (alandtse), which is GPL-3.0-or-later.

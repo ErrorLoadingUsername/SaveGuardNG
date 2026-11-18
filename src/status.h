@@ -52,7 +52,7 @@ namespace sg
 	inline std::atomic<bool> g_autoSave{ false };    // autosave after a loading screen, once it is safe
 	inline std::atomic<int>  g_autoSaveSlots{ 3 };   // SaveGuard_Auto1 .. N, rotating
 	inline std::atomic<int>  g_autoSaveTimeout{ 60 };  // give up after this many seconds
-	inline std::atomic<bool> g_english{ false };       // language of the menu page and notifications
+	inline std::atomic<bool> g_english{ true };       // language of the menu page and notifications
 
 	// more autosave triggers
 	inline std::atomic<bool> g_autoSleepWait{ true };   // after sleeping / waiting

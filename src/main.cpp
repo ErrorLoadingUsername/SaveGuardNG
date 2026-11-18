@@ -53,7 +53,7 @@ namespace
 	};
 	static_assert(sizeof(Entry) == 0x10);
 
-	struct StorageLayout
+	struct SkseStorageLayout
 	{
 		void*        vtbl;       // 00
 		std::byte    lock[40];   // 08 ICriticalSection
@@ -64,10 +64,10 @@ namespace
 		std::size_t* freeEnd;    // 50
 		std::size_t* freeCap;    // 58
 	};
-	static_assert(offsetof(StorageLayout, begin) == 0x30);
-	static_assert(offsetof(StorageLayout, freeBegin) == 0x48);
+	static_assert(offsetof(SkseStorageLayout, begin) == 0x30);
+	static_assert(offsetof(SkseStorageLayout, freeBegin) == 0x48);
 
-	StorageLayout*        g_storage = nullptr;
+	SkseStorageLayout*        g_storage = nullptr;
 	std::filesystem::path g_logPath;  // where SaveGuard.log is written
 
 	// status shown on the SKSE Menu Framework page
@@ -239,7 +239,7 @@ namespace
 
 		// 4) the static instance: an object in .data whose first qword is that vtable
 		std::uintptr_t found = 0;
-		for (std::size_t i = 0; i + sizeof(StorageLayout) <= dataSize; i += 8) {
+		for (std::size_t i = 0; i + sizeof(SkseStorageLayout) <= dataSize; i += 8) {
 			if (*reinterpret_cast<const std::uintptr_t*>(data + i) == vtbl) {
 				++a_candidates;
 				if (!found) {
@@ -271,9 +271,8 @@ namespace
 			return false;
 		}
 		if (REL::Module::IsVR() || g_skseName.rfind("sksevr", 0) == 0) {
-			SKSE::log::error("Skyrim VR is not supported - SaveGuard disabled");
-			SetInfo(false, sg::L("Skyrim VR wird nicht unterstuetzt.", "Skyrim VR is not supported."));
-			return false;
+			// not tested on VR yet - the storage layout is still checked below before anything is read
+			SKSE::log::warn("Skyrim VR: not tested yet - please report whether SaveGuard works");
 		}
 		if (sg::win::CriticalSectionSize() != 40) {
 			SKSE::log::error("unexpected CRITICAL_SECTION size - SaveGuard disabled");
@@ -288,7 +287,7 @@ namespace
 			return false;
 		}
 
-		auto       storage = reinterpret_cast<StorageLayout*>(address);
+		auto       storage = reinterpret_cast<SkseStorageLayout*>(address);
 		const bool vecOk   = (!storage->begin && !storage->end) ||
 		                   (storage->begin <= storage->end && storage->end <= storage->cap);
 		const bool freeOk = (!storage->freeBegin && !storage->freeEnd) ||
@@ -462,15 +461,15 @@ namespace
 			return;
 		}
 		if (!g_storage) {
-			RE::DebugNotification(sg::L("SaveGuard: inaktiv (andere SKSE-Version)", "SaveGuard: inactive (different SKSE version)"));
+			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: inaktiv (andere SKSE-Version)", "SaveGuard: inactive (different SKSE version)"));
 		} else if (stale > 0) {
-			RE::DebugNotification(sg::L("SaveGuard: Absturzgefahr - jetzt nicht speichern", "SaveGuard: crash risk - do not save now"));
+			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Absturzgefahr - jetzt nicht speichern", "SaveGuard: crash risk - do not save now"));
 		} else if (alive > 0) {
 			const auto it  = std::find_if(open.begin(), open.end(), [](auto& o) { return o.state == StackState::kAlive; });
 			std::string msg = std::string(sg::L("SaveGuard: kurz warten - ", "SaveGuard: wait a moment - ")) + ShortScript(*it) + sg::L(" arbeitet noch", " is still working");
-			RE::DebugNotification(msg.c_str());
+			RE::SendHUDMessage::ShowHUDMessage(msg.c_str());
 		} else {
-			RE::DebugNotification(sg::L("SaveGuard: Speichern sicher", "SaveGuard: safe to save"));
+			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Speichern sicher", "SaveGuard: safe to save"));
 		}
 	}
 
@@ -709,7 +708,8 @@ namespace
 		char stamp[16];
 		std::strftime(stamp, sizeof(stamp), "%Y%m%d%H%M%S", &tm);
 
-		const auto id = manager ? manager->currentPlayerID : 0;
+		// player ID = currentCharacterID (low) + currentCharacterModded (high), as in the save file names
+		const std::uint64_t id = manager ? (static_cast<std::uint64_t>(manager->currentCharacterModded) << 32) | manager->currentCharacterID : 0;
 		char       buf[512];
 		std::snprintf(buf, sizeof(buf), "%s_%08X_%X_%s_%s_000000_%s_%u_1", a_prefix.c_str(),
 			static_cast<unsigned>(id & 0xFFFFFFFF), static_cast<unsigned>(id >> 32), hexName.c_str(), place.c_str(), stamp,
@@ -750,16 +750,12 @@ namespace
 		}
 	}
 
-	// PlayerCharacter flags at +0xBDC (kGoToJailQueued = 1 << 6) and +0xBDD
-	// (kServingJailTime = 1 << 4). Same offsets in SE and AE; CommonLib hides them
-	// in multi-target builds because VR differs, so they are read directly here.
+	// PlayerCharacter flags: CommonLib knows where they are on every runtime
+	// (+0xBD8 on SE / AE up to 1.6.1170, 8 bytes later from 1.7.99 on).
 	bool InJail(RE::PlayerCharacter* a_player)
 	{
-		if (REL::Module::IsVR()) {
-			return false;
-		}
-		const auto base = reinterpret_cast<const std::uint8_t*>(a_player);
-		return (base[0xBDD] & (1 << 4)) != 0 || (base[0xBDC] & (1 << 6)) != 0;
+		const auto& flags = a_player->GetPlayerFlags();
+		return flags.servingJailTime || flags.goToJailQueued;
 	}
 
 	// Why an autosave has to wait right now (nullptr = go ahead).
@@ -805,7 +801,7 @@ namespace
 			SetAutoState(std::string(sg::L("uebersprungen (nicht rechtzeitig sicher): ", "skipped (not safe in time): ")) + g_pending.reason);
 			SKSE::log::info("[{}] {}: skipped, not possible within {} s", quick ? "quicksave" : "autosave", g_pending.reason, timeout);
 			if (sg::g_notifyBackground || quick) {
-				RE::DebugNotification(quick ? sg::L("SaveGuard: Schnellspeichern abgebrochen (nicht sicher)", "SaveGuard: quicksave cancelled (not safe)") :
+				RE::SendHUDMessage::ShowHUDMessage(quick ? sg::L("SaveGuard: Schnellspeichern abgebrochen (nicht sicher)", "SaveGuard: quicksave cancelled (not safe)") :
 				                              sg::L("SaveGuard: Autospeichern uebersprungen (nicht sicher)", "SaveGuard: autosave skipped (not safe)"));
 			}
 			g_pending = {};
@@ -831,7 +827,7 @@ namespace
 				SKSE::log::warn("[rest] sleep/wait never sent its stop event - saving may be unsafe for plugins that track it");
 				if (!g_restWarned) {
 					g_restWarned = true;
-					RE::DebugNotification(sg::L("SaveGuard: Schlafen/Warten nicht sauber beendet - Spiel neu starten empfohlen",
+					RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Schlafen/Warten nicht sauber beendet - Spiel neu starten empfohlen",
 						"SaveGuard: sleep/wait did not end cleanly - restarting the game is recommended"));
 				}
 			} else {
@@ -894,7 +890,7 @@ namespace
 					g_status.savesBlocked++;
 				}
 				SetAutoState(sg::L("Spiel hat Speichern abgelehnt", "the game refused to save"));
-				RE::DebugNotification(quick ? sg::L("SaveGuard: Schnellspeichern nicht moeglich (vom Spiel abgelehnt)", "SaveGuard: quicksave not possible (refused by the game)") :
+				RE::SendHUDMessage::ShowHUDMessage(quick ? sg::L("SaveGuard: Schnellspeichern nicht moeglich (vom Spiel abgelehnt)", "SaveGuard: quicksave not possible (refused by the game)") :
 				                      sg::L("SaveGuard: Autospeichern nicht moeglich (vom Spiel abgelehnt)", "SaveGuard: autosave not possible (refused by the game)"));
 				g_pending = {};
 			}
@@ -919,17 +915,16 @@ namespace
 		g_pending = {};
 		sg::SaveSettings();  // remembers the slot index
 		if (sg::g_notifyBackground || quick) {
-			RE::DebugNotification(quick ? sg::L("SaveGuard: schnellgespeichert", "SaveGuard: quicksaved") :
+			RE::SendHUDMessage::ShowHUDMessage(quick ? sg::L("SaveGuard: schnellgespeichert", "SaveGuard: quicksaved") :
 			                              sg::L("SaveGuard: automatisch gespeichert", "SaveGuard: autosaved"));
 		}
 	}
 
-	// ControlMap enabled-controls flags: CommonLibSSE-NG expects them at +0x118, on
-	// 1.6.1130+ they are at +0x120 (verified on 1.6.1170). Bit 0 = movement.
+	// ControlMap enabled-controls flags: CommonLib knows where they are on every runtime
+	// (+0x118 SE / AE before 1.6.1130, +0x120 from 1.6.1130 on, +0x138 VR).
 	bool MovementEnabled(const RE::ControlMap* a_map)
 	{
-		static const std::ptrdiff_t offset = REL::Module::get().version() >= REL::Version{ 1, 6, 1130, 0 } ? 0x120 : 0x118;
-		return (*reinterpret_cast<const std::uint32_t*>(reinterpret_cast<const std::byte*>(a_map) + offset) & 1u) != 0;
+		return a_map->IsMovementControlsEnabled();
 	}
 
 	// Did the last save SaveGuard started actually reach the disk?
@@ -979,7 +974,7 @@ namespace
 			g_status.lastAutoSave  = NowString() + "  " + g_verify.prefix + sg::L("  NICHT geschrieben (", "  NOT written (") + g_verify.reason + ")";
 			g_status.autoSaveState = sg::L("letztes Speichern wurde blockiert", "last save was blocked");
 		}
-		RE::DebugNotification(g_verify.quick ?
+		RE::SendHUDMessage::ShowHUDMessage(g_verify.quick ?
 			sg::L("SaveGuard: Schnellspeichern wurde NICHT ausgefuehrt (von einer anderen Mod blockiert?)", "SaveGuard: quicksave was NOT made (blocked by another mod?)") :
 			sg::L("SaveGuard: Autospeichern wurde NICHT ausgefuehrt (von einer anderen Mod blockiert?)", "SaveGuard: autosave was NOT made (blocked by another mod?)"));
 	}
@@ -1027,12 +1022,12 @@ namespace
 				}
 				if (stale || alive || g_resting) {
 					RequestSave(SaveKind::kQuick, sg::L("Schnellspeichern", "quicksave"));
-					RE::DebugNotification(sg::L("SaveGuard: Schnellspeichern verschoben - speichert, sobald es sicher ist",
+					RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Schnellspeichern verschoben - speichert, sobald es sicher ist",
 						"SaveGuard: quicksave postponed - saving as soon as it is safe"));
 					return true;  // swallow the key, we save later
 				}
 				SKSE::log::info("[quicksave] safe - saving right away");
-				RE::DebugNotification(sg::L("SaveGuard: sicher - schnellgespeichert", "SaveGuard: safe - quicksaved"));
+				RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: sicher - schnellgespeichert", "SaveGuard: safe - quicksaved"));
 			}
 		}
 		return g_quickSaveOriginal(a_this, a_event);
@@ -1041,7 +1036,7 @@ namespace
 	void InstallQuickSaveGuard()
 	{
 		auto controls = RE::MenuControls::GetSingleton();
-		auto handler  = controls ? controls->quickSaveLoadHandler.get() : nullptr;
+		auto handler  = controls ? controls->quickSaveLoadHandler : nullptr;
 		if (!handler) {
 			SKSE::log::warn("QuickSaveLoadHandler not found - quicksave guard off");
 			return;
@@ -1178,7 +1173,7 @@ namespace
 				g_status.dangers++;
 			}
 			if (sg::g_notifyBackground) {
-				RE::DebugNotification(sg::L("SaveGuard: Absturzgefahr - jetzt nicht speichern", "SaveGuard: crash risk - do not save now"));
+				RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Absturzgefahr - jetzt nicht speichern", "SaveGuard: crash risk - do not save now"));
 			}
 			CheckAndNotify("watch: danger", false);  // writes the details to the log
 		}
@@ -1194,7 +1189,7 @@ namespace
 		// "safe" only after a real unsafe phase (danger, or waiting for a second or more)
 		if (now == Overall::kSafe && g_last != Overall::kSafe &&
 			(g_last == Overall::kDanger || tick - g_unsafeSince >= 1s) && sg::g_notifyBackground) {
-			RE::DebugNotification(sg::L("SaveGuard: Speichern sicher", "SaveGuard: safe to save"));
+			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Speichern sicher", "SaveGuard: safe to save"));
 		}
 		g_last = now;
 
@@ -1422,7 +1417,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	SKSE::Init(a_skse);
 	g_skseVersion = a_skse->SKSEVersion();
 	SetupLog();
-	SKSE::log::info("SaveGuard NG 1.1.9 loading");
+	SKSE::log::info("SaveGuard NG 1.2.1 (beta) loading");
 	g_iniPath = FindLogDir() / "SaveGuardNG.ini";
 	LoadSettings();
 	sg::SaveSettings();  // rewrite with all keys and comments (keeps the loaded values)

@@ -1,11 +1,17 @@
 cmake_minimum_required(VERSION 3.21)
-project(SaveGuardNG VERSION 1.1.9 LANGUAGES CXX)
+project(SaveGuardNG VERSION 1.2.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-find_package(CommonLibSSE CONFIG REQUIRED)
+# CommonLibSSE NG (alandtse, branch ng) as git submodule in lib/commonlibsse-ng - supports Skyrim 1.7.x / SKSE 2.3
+# (declares Address Library V5). Built from source together with the plugin.
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SKSE_SUPPORT_PATCH_SAFETY OFF CACHE BOOL "" FORCE)
+set(COMMONLIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/commonlibsse-ng")
+add_subdirectory("${COMMONLIB_DIR}" "${CMAKE_BINARY_DIR}/CommonLibSSE" EXCLUDE_FROM_ALL)
+include("${COMMONLIB_DIR}/cmake/CommonLibSSE.cmake")
 
 add_commonlibsse_plugin(${PROJECT_NAME}
     AUTHOR "ErrorLoadingUsername"
