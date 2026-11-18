@@ -506,6 +506,8 @@ namespace
 		SaveKind          kind{ SaveKind::kAuto };
 		std::string       reason;
 		Clock::time_point since{};
+		Clock::time_point retryAt{};   // the game refused the last attempt - try again from here on
+		int               attempts{ 0 };
 	};
 
 	PendingSave       g_pending;
@@ -597,8 +599,12 @@ namespace
 		std::string       prefix;   // slot, older files are removed once the new one exists
 		std::string       reason;
 		Clock::time_point since{};
+		int               attempts{ 0 };
+		int               prevIndex{ 0 };  // autosave slot index before this save (reused on a retry)
 	};
 	VerifySave g_verify;
+
+	constexpr int kMaxSaveAttempts = 3;
 
 	void RequestSave(SaveKind a_kind, const char* a_reason)
 	{
@@ -808,6 +814,9 @@ namespace
 		if (!quick && waited < 3s) {
 			return;  // let OnCellLoad / OnLoad scripts start first
 		}
+		if (Clock::now() < g_pending.retryAt) {
+			return;  // the game refused the last attempt a moment ago
+		}
 		auto player = RE::PlayerCharacter::GetSingleton();
 		if (!player || player->IsDead()) {
 			SetAutoState(sg::L("wartet (Spieler tot)", "waiting (player dead)"));
@@ -853,12 +862,13 @@ namespace
 			return;
 		}
 		std::string prefix;
+		const int   prevIndex = g_autoIndex.load();
+		int         index     = prevIndex;
 		if (quick) {
 			prefix = "Quicksave0";
 		} else {
 			const int slots = std::clamp(sg::g_autoSaveSlots.load(), 1, 10);
-			const int index = g_autoIndex.load() % slots + 1;
-			g_autoIndex     = index;
+			index           = prevIndex % slots + 1;
 			// "Autosave..." makes the load menu show AUTO; 11+ never collides with the
 			// game's own Autosave1-3 (iAutoSaveCount)
 			prefix = "Autosave" + std::to_string(10 + index);
@@ -867,9 +877,34 @@ namespace
 
 		SKSE::log::info("[{}] {}: saving {} after {} s ({} finished object(s) left, safe)", quick ? "quicksave" : "autosave",
 			g_pending.reason, name, std::chrono::duration_cast<std::chrono::seconds>(waited).count(), open.size());
-		manager->Save(name.c_str());
+		// The game's own save function, called directly to get its result: it returns false when the
+		// game refuses to save right now (seen once 3 s after waiting). Then retry a few seconds later.
+		using SaveImpl = bool (*)(RE::BGSSaveLoadManager*, std::int32_t, std::uint32_t, const char*);
+		static REL::Relocation<SaveImpl> saveImpl{ RELOCATION_ID(34818, 35727) };
+		g_pending.attempts++;
+		if (!saveImpl(manager, 2, 0, name.c_str())) {
+			if (g_pending.attempts < kMaxSaveAttempts) {
+				g_pending.retryAt = Clock::now() + 5s;
+				SetAutoState(sg::L("wartet (Spiel hat Speichern abgelehnt, neuer Versuch)", "waiting (the game refused to save, trying again)"));
+				SKSE::log::warn("[save] the game refused to save {} - trying again in 5 s (attempt {}/{})", name, g_pending.attempts, kMaxSaveAttempts);
+			} else {
+				SKSE::log::warn("[save] the game refused to save {} {} times - giving up", name, kMaxSaveAttempts);
+				{
+					std::scoped_lock l(g_statusMutex);
+					g_status.savesBlocked++;
+				}
+				SetAutoState(sg::L("Spiel hat Speichern abgelehnt", "the game refused to save"));
+				RE::DebugNotification(quick ? sg::L("SaveGuard: Schnellspeichern nicht moeglich (vom Spiel abgelehnt)", "SaveGuard: quicksave not possible (refused by the game)") :
+				                      sg::L("SaveGuard: Autospeichern nicht moeglich (vom Spiel abgelehnt)", "SaveGuard: autosave not possible (refused by the game)"));
+				g_pending = {};
+			}
+			return;
+		}
+		if (!quick) {
+			g_autoIndex = index;
+		}
 		// old files of this slot are only removed once the new one is on disk (VerifyLastSave)
-		g_verify = { true, quick, name, prefix, g_pending.reason, Clock::now() };
+		g_verify = { true, quick, name, prefix, g_pending.reason, Clock::now(), g_pending.attempts, prevIndex };
 
 		g_playMs = 0;
 		if (!quick) {
@@ -920,6 +955,21 @@ namespace
 		g_verify.active = false;
 		SKSE::log::warn("[save] {}.ess was not written - the save was blocked or failed (another save mod?). Older files of this slot were kept.",
 			g_verify.name);
+		if (g_verify.attempts < kMaxSaveAttempts && !g_pending.active && !sg::WarningsOnly()) {
+			// try again in the same slot (the old file there was kept)
+			if (!g_verify.quick) {
+				g_autoIndex = g_verify.prevIndex;
+			}
+			g_pending          = {};
+			g_pending.active   = true;
+			g_pending.kind     = g_verify.quick ? SaveKind::kQuick : SaveKind::kAuto;
+			g_pending.reason   = g_verify.reason;
+			g_pending.since    = Clock::now();
+			g_pending.attempts = g_verify.attempts;
+			SKSE::log::info("[save] trying again (attempt {}/{})", g_verify.attempts + 1, kMaxSaveAttempts);
+			SetAutoState(sg::L("wartet (letzter Versuch nicht geschrieben, neuer Versuch)", "waiting (last attempt not written, trying again)"));
+			return;
+		}
 		{
 			std::scoped_lock l(g_statusMutex);
 			g_status.savesBlocked++;
@@ -1372,7 +1422,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	SKSE::Init(a_skse);
 	g_skseVersion = a_skse->SKSEVersion();
 	SetupLog();
-	SKSE::log::info("SaveGuard NG 1.1.8 loading");
+	SKSE::log::info("SaveGuard NG 1.1.9 loading");
 	g_iniPath = FindLogDir() / "SaveGuardNG.ini";
 	LoadSettings();
 	sg::SaveSettings();  // rewrite with all keys and comments (keeps the loaded values)
