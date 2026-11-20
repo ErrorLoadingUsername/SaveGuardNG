@@ -271,8 +271,8 @@ namespace
 			return false;
 		}
 		if (REL::Module::IsVR() || g_skseName.rfind("sksevr", 0) == 0) {
-			// not tested on VR yet - the storage layout is still checked below before anything is read
-			SKSE::log::warn("Skyrim VR: not tested yet - please report whether SaveGuard works");
+			// VR (tested) - the storage layout is still checked below before anything is read
+			SKSE::log::info("running on Skyrim VR");
 		}
 		if (sg::win::CriticalSectionSize() != 40) {
 			SKSE::log::error("unexpected CRITICAL_SECTION size - SaveGuard disabled");
