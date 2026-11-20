@@ -730,6 +730,48 @@ namespace
 		return FindLogDir().parent_path() / local;
 	}
 
+	// Next number for a regular save ("Save<N>_..."): one more than the highest in the save folder.
+	int NextRegularSaveNumber()
+	{
+		int             highest = 0;
+		std::error_code ec;
+		for (const auto& f : std::filesystem::directory_iterator(SaveDirectory(), ec)) {
+			const auto name = f.path().filename().string();
+			if (name.rfind("Save", 0) != 0 || name.size() < 6 || !std::isdigit(static_cast<unsigned char>(name[4]))) {
+				continue;
+			}
+			highest = (std::max)(highest, std::atoi(name.c_str() + 4));
+		}
+		return highest + 1;
+	}
+
+	// Engine Fixes [Patches] bRegularQuicksaves: F5 makes a regular save instead of Quicksave0.
+	// SaveGuard's held-back quicksave follows that, so the result is the same as pressing F5.
+	bool ReadEngineFixesRegularQuicksaves()
+	{
+		std::error_code ec;
+		std::ifstream   file(std::filesystem::current_path(ec) / "Data" / "SKSE" / "Plugins" / "EngineFixes.toml");
+		std::string     line, section;
+		while (std::getline(file, line)) {
+			const auto first = line.find_first_not_of(" \t");
+			if (first == std::string::npos || line[first] == '#') {
+				continue;
+			}
+			line = line.substr(first);
+			if (line[0] == '[') {
+				section = line.substr(0, line.find(']') + 1);
+				continue;
+			}
+			if (section == "[Patches]" && line.rfind("bRegularQuicksaves", 0) == 0) {
+				const auto eq    = line.find('=');
+				auto       value = eq == std::string::npos ? std::string{} : line.substr(eq + 1);
+				value            = value.substr(0, value.find('#'));
+				return value.find("true") != std::string::npos;
+			}
+		}
+		return false;
+	}
+
 	// Removes older files of one slot ("<prefix>_..."), never the one just written.
 	void RemoveOldSlotFiles(const std::string& a_prefix, const std::string& a_keep)
 	{
@@ -861,7 +903,8 @@ namespace
 		const int   prevIndex = g_autoIndex.load();
 		int         index     = prevIndex;
 		if (quick) {
-			prefix = "Quicksave0";
+			// Engine Fixes' regular quicksaves: a new regular save, as F5 would make
+			prefix = sg::g_efRegularQuicksaves ? "Save" + std::to_string(NextRegularSaveNumber()) : "Quicksave0";
 		} else {
 			const int slots = std::clamp(sg::g_autoSaveSlots.load(), 1, 10);
 			index           = prevIndex % slots + 1;
@@ -938,7 +981,9 @@ namespace
 		if (std::filesystem::exists(file, ec)) {
 			g_verify.active = false;
 			SKSE::log::info("[save] {}.ess written", g_verify.name);
-			RemoveOldSlotFiles(g_verify.prefix, g_verify.name);
+			if (g_verify.prefix.rfind("Save", 0) != 0) {  // regular saves are no slot - nothing to rotate
+				RemoveOldSlotFiles(g_verify.prefix, g_verify.name);
+			}
 			if (!g_verify.quick) {
 				RemoveOldSlotFiles("SaveGuardAuto" + std::to_string(g_autoIndex.load()), g_verify.name);  // 1.0.x name
 			}
@@ -1260,6 +1305,17 @@ namespace
 		return std::filesystem::current_path(ec) / "Data" / "SKSE" / "Plugins";
 	}
 
+	// Path for the log without the user's own folder names (e.g. the Windows user name):
+	// "X:\\...\\My Games\\Skyrim Special Edition\\SKSE\\file" -> "Documents\\My Games\\...\\file"
+	std::string AnonPath(const std::filesystem::path& a_path)
+	{
+		const auto text = a_path.string();
+		if (const auto pos = text.find("\\My Games\\"); pos != std::string::npos) {
+			return "Documents" + text.substr(pos);
+		}
+		return a_path.filename().string();
+	}
+
 	void SetupLog()
 	{
 		g_logPath = FindLogDir() / "SaveGuardNG.log";
@@ -1417,12 +1473,12 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	SKSE::Init(a_skse);
 	g_skseVersion = a_skse->SKSEVersion();
 	SetupLog();
-	SKSE::log::info("SaveGuard NG 1.2.1 (beta) loading");
+	SKSE::log::info("SaveGuard NG 1.2.2 loading");
 	g_iniPath = FindLogDir() / "SaveGuardNG.ini";
 	LoadSettings();
 	sg::SaveSettings();  // rewrite with all keys and comments (keeps the loaded values)
 	SetAutoState(sg::L("bereit", "ready"));
-	SKSE::log::info("settings {}: autosave on cell change {}, {} slot(s), timeout {} s", g_iniPath.string(),
+	SKSE::log::info("settings {}: autosave on cell change {}, {} slot(s), timeout {} s", AnonPath(g_iniPath),
 		sg::g_autoSave ? "on" : "off", sg::g_autoSaveSlots.load(), sg::g_autoSaveTimeout.load());
 
 	SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* a_msg) {
@@ -1434,6 +1490,10 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 				SKSE::log::info("Safer Saving SKSE (SaferSaving.dll) found - {}", sg::g_respectOtherSavers ?
 					"warnings only: quicksave guard and autosaves are off, Safer Saving does the saving" :
 					"warningsOnlyWithOtherSaveMods=0: quicksave guard and autosaves stay on (saves may get blocked)");
+			}
+			if (sg::win::ModuleBase(L"EngineFixes.dll") && ReadEngineFixesRegularQuicksaves()) {
+				sg::g_efRegularQuicksaves = true;
+				SKSE::log::info("Engine Fixes bRegularQuicksaves is on - a held-back quicksave becomes a regular save too");
 			}
 			break;
 		case SKSE::MessagingInterface::kDataLoaded:

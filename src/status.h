@@ -71,6 +71,7 @@ namespace sg
 	// compatibility with other mods that block or make saves (Safer Saving SKSE)
 	inline std::atomic<bool> g_respectOtherSavers{ true };  // INI: warnings only when one is installed
 	inline std::atomic<bool> g_otherSaverFound{ false };    // detected at startup
+	inline std::atomic<bool> g_efRegularQuicksaves{ false };  // Engine Fixes turns quicksaves into regular saves
 	inline bool WarningsOnly() { return g_otherSaverFound && g_respectOtherSavers; }
 
 	// pick the text for the current language

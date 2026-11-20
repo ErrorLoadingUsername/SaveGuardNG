@@ -12,6 +12,7 @@
 #include <chrono>
 #include <thread>
 #include <cstddef>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <ctime>

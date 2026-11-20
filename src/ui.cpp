@@ -147,6 +147,10 @@ namespace
 		SeparatorText(sg::L("Schnellspeichern", "Quicksave"));
 		Toggle(sg::L("Schnellspeichern (F5) zurueckhalten, solange es nicht sicher ist", "Hold quicksave (F5) back while it is not safe"), sg::g_guardQuicksave);
 		TextDisabled("%s", sg::L("Gespeichert wird dann automatisch, sobald es sicher ist.", "It then saves automatically as soon as it is safe."));
+		if (sg::g_efRegularQuicksaves) {
+			TextDisabled("%s", sg::L("Engine Fixes macht aus Schnellspeichern normale Spielstaende - SaveGuard ebenso.",
+				"Engine Fixes turns quicksaves into regular saves - SaveGuard does the same."));
+		}
 
 		SeparatorText(sg::L("Autospeichern - Zustand", "Autosave - state"));
 		Text(sg::L("Zustand: %s", "State: %s"), (s.autoSaveState == "bereit" || s.autoSaveState == "ready") ? sg::L("bereit", "ready") : s.autoSaveState.c_str());
