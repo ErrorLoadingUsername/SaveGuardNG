@@ -40,6 +40,8 @@ namespace sg
 		std::uint64_t        autoSaves{ 0 };
 		std::uint64_t        autoSavesSkipped{ 0 };
 		std::uint64_t        savesBlocked{ 0 };   // own saves that never reached the disk
+		std::uint64_t        savesRescued{ 0 };   // saves that would have crashed - defused right before writing
+		std::string          lastRescue{ "-" };
 	};
 
 	UiStatus GetStatus();

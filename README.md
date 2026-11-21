@@ -8,6 +8,7 @@ Papyrus mods send their mod events through SKSE objects (`ModEvent.Create` ... `
 
 ## Features
 
+- **Save crash guard** - right before every save (any kind, also by other mods), objects of finished or broken scripts are handed to SKSE for clean-up, so a script that ended a moment ago can no longer crash the save. When this saves a save that would have crashed, a notification says so and the menu counts it.
 - **Live save state** - safe / running / danger; short-lived objects only count after one second.
 - **Notifications** when the state changes, optionally when the pause menu opens.
 - **Quicksave guard** - F5 is held back while it is not safe (and while sleeping/waiting) and done as soon as it is safe.
@@ -23,6 +24,7 @@ Settings: `Documents\My Games\Skyrim Special Edition\SKSE\SaveGuardNG.ini` (crea
 - The SKSE object storage is found at runtime through SKSE's own RTTI (`SKSEPersistentObjectStorage` type descriptor -> complete object locator -> vtable -> the single instance in `.data`). The layout is checked before anything is read; if it does not match, the plugin stays inactive. No hard-coded SKSE addresses.
 - Quicksave guard: hook on `QuickSaveLoadHandler::ProcessButton` (vtable slot 5).
 - Sleep/wait window: `TESSleepStart/Stop` and `TESWaitStart/Stop` events.
+- Last moment before saving: on SKSE's `kSaveGame` message (saving thread, right before the save is written) objects of finished or stale Papyrus stacks get an owner id that is not in the VM's stack table, so SKSE frees them without the stack lookup that crashes (`skse64+5D51F`). Objects of running scripts are left alone.
 
 ## Requirements
 

@@ -146,6 +146,27 @@ namespace
 		}
 	}
 
+	// Is a_id a key of the VM's running-stacks table? false if the table could not be read.
+	bool StackIdUsedRaw(std::uintptr_t a_vm, std::uint32_t a_id, bool* a_used)
+	{
+		*a_used = true;
+		__try {
+			const auto capacity = *reinterpret_cast<const std::uint32_t*>(a_vm + kVMStacksCapacity);
+			const auto entries  = *reinterpret_cast<const std::uintptr_t*>(a_vm + kVMStacksEntries);
+			bool       used     = false;
+			if (entries) {
+				for (std::uint32_t i = 0; i < capacity && !used; ++i) {
+					const auto e = entries + i * kHashEntrySize;
+					used = *reinterpret_cast<const std::uintptr_t*>(e + 0x10) != 0 && *reinterpret_cast<const std::uint32_t*>(e) == a_id;
+				}
+			}
+			*a_used = used;
+			return true;
+		} __except (1 /* EXCEPTION_EXECUTE_HANDLER */) {
+			return false;
+		}
+	}
+
 	void Append(char* a_buf, std::size_t a_len, std::size_t& a_pos, const char* a_text)
 	{
 		for (; a_text && *a_text && a_pos + 1 < a_len; ++a_text) {
@@ -388,6 +409,93 @@ namespace
 		auto result = ReadEntries();
 		ProbeOwners(result);
 		return result;
+	}
+
+	// ---- last moment before saving ------------------------------------------------------
+	// SKSE's kSaveGame message comes on the saving thread right before the game - and with it SKSE - writes the
+	// save. The check on the quicksave key or in the pause menu can be a few frames older: an object whose script
+	// finished in between, or whose stack memory was just freed, can still crash SKSE's lookup. So here every
+	// object of a finished or stale stack gets an owner id that is not in the VM's table - SKSE then frees it
+	// without reading any stack, exactly as it does for finished ones. Objects of running scripts stay untouched.
+	void DefuseForSave()
+	{
+		if (!g_storage) {
+			return;
+		}
+		auto vm = reinterpret_cast<std::uintptr_t>(RE::BSScript::Internal::VirtualMachine::GetSingleton());
+		if (!vm) {
+			return;
+		}
+		struct Candidate
+		{
+			std::size_t   index;
+			void*         obj;
+			std::uint32_t stackId;
+			StackState    state;
+		};
+		std::vector<Candidate> list;
+		sg::win::Lock(g_storage->lock);
+		for (auto e = g_storage->begin; e && e < g_storage->end; ++e) {
+			if (e->obj) {
+				list.push_back({ static_cast<std::size_t>(e - g_storage->begin), e->obj, e->owningStackId, StackState::kGone });
+			}
+		}
+		sg::win::Unlock(g_storage->lock);
+		if (list.empty()) {
+			return;
+		}
+
+		// the two locks are never held together (no lock-order risk with SKSE or the VM)
+		std::uint32_t unused = 0;
+		{
+			auto&               lock = *reinterpret_cast<RE::BSSpinLock*>(vm + kVMStacksLock);
+			RE::BSSpinLockGuard guard(lock);
+			for (std::uint32_t id = 0xFFFFFFFF; id > 0xFFFFFF00 && !unused; --id) {
+				bool used = true;
+				if (!StackIdUsedRaw(vm, id, &used)) {
+					break;
+				}
+				if (!used) {
+					unused = id;
+				}
+			}
+			for (auto& c : list) {
+				void* stack = nullptr;
+				c.state     = ProbeStackRaw(vm, c.stackId, &stack);
+			}
+		}
+		if (!unused) {
+			SKSE::log::warn("[save] no free owner id found - objects left as they are");
+			return;
+		}
+
+		std::size_t finished = 0, stale = 0, running = 0;
+		sg::win::Lock(g_storage->lock);
+		for (const auto& c : list) {
+			if (c.state == StackState::kAlive) {
+				++running;
+				continue;
+			}
+			auto e = g_storage->begin + c.index;
+			if (e >= g_storage->end || e->obj != c.obj || e->owningStackId != c.stackId) {
+				continue;  // changed in the meantime
+			}
+			e->owningStackId = unused;
+			++(c.state == StackState::kStale ? stale : finished);
+		}
+		sg::win::Unlock(g_storage->lock);
+		if (stale) {
+			{
+				std::scoped_lock l(g_statusMutex);
+				g_status.savesRescued++;
+				g_status.lastRescue = NowString() + " - " + std::to_string(stale) + sg::L(" Objekt(e)", " object(s)");
+			}
+			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Absturz beim Speichern verhindert", "SaveGuard: save crash prevented"));
+			SKSE::log::warn("[save] {} STALE object(s) defused right before saving (this save would have crashed), {} finished, {} running left alone",
+				stale, finished, running);
+		} else if (finished) {
+			SKSE::log::info("[save] {} finished object(s) handed to SKSE for clean-up, {} running left alone", finished, running);
+		}
 	}
 
 	std::string ShortScript(const OpenObject& a_obj)
@@ -1473,7 +1581,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	SKSE::Init(a_skse);
 	g_skseVersion = a_skse->SKSEVersion();
 	SetupLog();
-	SKSE::log::info("SaveGuard NG 1.2.2 loading");
+	SKSE::log::info("SaveGuard NG {} loading", SKSE::PluginDeclaration::GetSingleton()->GetVersion().string("."));
 	g_iniPath = FindLogDir() / "SaveGuardNG.ini";
 	LoadSettings();
 	sg::SaveSettings();  // rewrite with all keys and comments (keeps the loaded values)
@@ -1530,6 +1638,10 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 			}
 			g_playMs   = 0;
 			g_lastTick = {};
+			break;
+		case SKSE::MessagingInterface::kSaveGame:
+			// on the saving thread, right before the save is written
+			DefuseForSave();
 			break;
 		case SKSE::MessagingInterface::kPostLoadGame:
 			g_inGame             = true;

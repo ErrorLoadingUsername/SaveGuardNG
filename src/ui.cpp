@@ -57,6 +57,12 @@ namespace
 		SeparatorText("Status");
 		TextColored(LevelColor(s.level), "%s", s.overall.c_str());
 		Text(sg::L("Letzte Pruefung: %s", "Last check: %s"), s.lastCheck.c_str());
+		if (s.savesRescued) {
+			TextColored(LevelColor(1), sg::L("Absturz beim Speichern verhindert: %llu mal (zuletzt %s)", "Save crash prevented: %llu time(s) (last %s)"),
+				static_cast<unsigned long long>(s.savesRescued), s.lastRescue.c_str());
+		} else {
+			TextDisabled("%s", sg::L("Absturz beim Speichern verhindert: noch nie in dieser Sitzung", "Save crash prevented: not yet this session"));
+		}
 		if (Button(sg::L("Jetzt pruefen", "Check now"))) {
 			sg::RequestCheck();
 		}
