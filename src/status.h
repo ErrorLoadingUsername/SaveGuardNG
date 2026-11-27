@@ -66,9 +66,12 @@ namespace sg
 	inline std::atomic<bool> g_autoSkipScenes{ true };  // not while movement is disabled (OStim etc.) + 5 s
 	inline std::atomic<bool> g_autoSkipSneak{ false };
 	inline std::atomic<bool> g_autoSkipMount{ false };
+	inline std::atomic<bool> g_autoOnlyInterior{ false };  // autosaves only inside (interior cells)
 	inline std::atomic<bool> g_autoSkipJail{ true };
 	// quicksave
 	inline std::atomic<bool> g_guardQuicksave{ true };  // hold F5 back while saving is unsafe
+	// save files
+	inline std::atomic<bool> g_regularSaves{ false };   // autosaves and held-back quicksaves as regular saves (Save<N>)
 
 	// compatibility with other mods that block or make saves (Safer Saving SKSE)
 	inline std::atomic<bool> g_respectOtherSavers{ true };  // INI: warnings only when one is installed

@@ -713,6 +713,13 @@ namespace
 
 	constexpr int kMaxSaveAttempts = 3;
 
+	// the player is in an interior cell (inside a house, cave, dungeon ...)
+	bool InInterior(RE::PlayerCharacter* a_player)
+	{
+		auto cell = a_player ? a_player->GetParentCell() : nullptr;
+		return cell && cell->IsInteriorCell();
+	}
+
 	void RequestSave(SaveKind a_kind, const char* a_reason)
 	{
 		const auto now = Clock::now();
@@ -722,6 +729,12 @@ namespace
 		if (a_kind == SaveKind::kAuto) {
 			if (g_pending.active) {
 				return;  // already waiting for a save
+			}
+			if (sg::g_autoOnlyInterior && !InInterior(RE::PlayerCharacter::GetSingleton())) {
+				SKSE::log::info("[autosave] {}: ignored, the player is outside (only inside is on)", a_reason);
+				std::scoped_lock l(g_statusMutex);
+				g_status.autoSavesSkipped++;
+				return;
 			}
 			const auto gap = std::chrono::seconds(std::clamp(sg::g_autoMinGap.load(), 0, 900));
 			if (g_lastAutoSave != Clock::time_point{} && now - g_lastAutoSave < gap) {
@@ -930,6 +943,9 @@ namespace
 		if (sg::g_autoSkipJail && InJail(a_player)) {
 			return sg::L("Gefaengnis", "jail");
 		}
+		if (sg::g_autoOnlyInterior && !InInterior(a_player)) {
+			return sg::L("draussen (nur innen speichern)", "outside (save only inside)");
+		}
 		return nullptr;
 	}
 
@@ -1010,7 +1026,11 @@ namespace
 		std::string prefix;
 		const int   prevIndex = g_autoIndex.load();
 		int         index     = prevIndex;
-		if (quick) {
+		if (sg::g_regularSaves) {
+			// setting "regular saves": a new regular save every time, like the game's Save menu makes -
+			// no slot, nothing rotated or removed (the slot index of the autosaves stays where it is)
+			prefix = "Save" + std::to_string(NextRegularSaveNumber());
+		} else if (quick) {
 			// Engine Fixes' regular quicksaves: a new regular save, as F5 would make
 			prefix = sg::g_efRegularQuicksaves ? "Save" + std::to_string(NextRegularSaveNumber()) : "Quicksave0";
 		} else {
@@ -1047,7 +1067,7 @@ namespace
 			}
 			return;
 		}
-		if (!quick) {
+		if (!quick && !sg::g_regularSaves) {
 			g_autoIndex = index;
 		}
 		// old files of this slot are only removed once the new one is on disk (VerifyLastSave)
@@ -1066,8 +1086,9 @@ namespace
 		g_pending = {};
 		sg::SaveSettings();  // remembers the slot index
 		if (sg::g_notifyBackground || quick) {
-			RE::SendHUDMessage::ShowHUDMessage(quick ? sg::L("SaveGuard: schnellgespeichert", "SaveGuard: quicksaved") :
-			                              sg::L("SaveGuard: automatisch gespeichert", "SaveGuard: autosaved"));
+			RE::SendHUDMessage::ShowHUDMessage(sg::g_regularSaves ? sg::L("SaveGuard: gespeichert", "SaveGuard: saved") :
+			                                   quick              ? sg::L("SaveGuard: schnellgespeichert", "SaveGuard: quicksaved") :
+			                                                        sg::L("SaveGuard: automatisch gespeichert", "SaveGuard: autosaved"));
 		}
 	}
 
@@ -1484,10 +1505,14 @@ namespace
 				sg::g_autoSkipSneak = value != 0;
 			} else if (key == "skipWhileRiding") {
 				sg::g_autoSkipMount = value != 0;
+			} else if (key == "onlyInterior") {
+				sg::g_autoOnlyInterior = value != 0;
 			} else if (key == "skipInJail") {
 				sg::g_autoSkipJail = value != 0;
 			} else if (key == "guardQuicksave") {
 				sg::g_guardQuicksave = value != 0;
+			} else if (key == "regularSaves") {
+				sg::g_regularSaves = value != 0;
 			} else if (key == "warningsOnlyWithOtherSaveMods") {
 				sg::g_respectOtherSavers = value != 0;
 			} else if (key == "english") {
@@ -1547,11 +1572,17 @@ namespace sg
 			 << "skipWhileSneaking=" << int(g_autoSkipSneak.load()) << "\n"
 			 << "; no autosave while riding\n"
 			 << "skipWhileRiding=" << int(g_autoSkipMount.load()) << "\n"
+			 << "; autosave only inside (interior cells: houses, caves, dungeons) - outside the trigger is ignored\n"
+			 << "onlyInterior=" << int(g_autoOnlyInterior.load()) << "\n"
 			 << "; no autosave while in jail\n"
 			 << "skipInJail=" << int(g_autoSkipJail.load()) << "\n"
 			 << "\n[Quicksave]\n"
 			 << "; hold quicksave (F5) back while saving is not safe and save as soon as it is\n"
 			 << "guardQuicksave=" << int(g_guardQuicksave.load()) << "\n"
+			 << "\n[SaveFiles]\n"
+			 << "; 1 = autosaves and held-back quicksaves are written as regular saves (Save<N>, like the game's Save menu)\n"
+			 << "; instead of Autosave11, 12 ... and Quicksave0. Regular saves are never rotated or removed by SaveGuard.\n"
+			 << "regularSaves=" << int(g_regularSaves.load()) << "\n"
 			 << "\n[Compatibility]\n"
 			 << "; Safer Saving SKSE (SaferSaving.dll) blocks saves while you move, fight or are in a menu - also the\n"
 			 << "; saves SaveGuard makes. When it is installed, SaveGuard only warns: quicksave guard and autosaves are\n"

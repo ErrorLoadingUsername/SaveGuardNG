@@ -144,11 +144,13 @@ namespace
 		Toggle(sg::L("Nicht waehrend Szenen (OStim, Steuerung gesperrt)", "Not during scenes (OStim, controls disabled)"), sg::g_autoSkipScenes);
 		Toggle(sg::L("Nicht beim Schleichen", "Not while sneaking"), sg::g_autoSkipSneak);
 		Toggle(sg::L("Nicht beim Reiten", "Not while riding"), sg::g_autoSkipMount);
+		Toggle(sg::L("Nur in Innenraeumen (Haeuser, Hoehlen, Dungeons)", "Only inside (houses, caves, dungeons)"), sg::g_autoOnlyInterior);
 		Toggle(sg::L("Nicht im Gefaengnis", "Not in jail"), sg::g_autoSkipJail);
 		Slider(sg::L("Mindestabstand zwischen Autosaves", "Minimum time between autosaves"), sg::g_autoMinGap, 0, 900, "%d s");
 		Slider(sg::L("Anzahl Speicherplaetze", "Number of save slots"), sg::g_autoSaveSlots, 1, 10, "%d");
 		Slider(sg::L("Hoechstens warten", "Wait at most"), sg::g_autoSaveTimeout, 10, 300, "%d s");
-		TextDisabled("%s", sg::L("Speichert als Autosave11, 12, ... (rotierend, im Ladenmenue als AUTO).", "Saves as Autosave11, 12, ... (rotating, shown as AUTO in the load menu)."));
+		TextDisabled("%s", sg::g_regularSaves ? sg::L("Speichert als normale Spielstaende (siehe Speicherdateien unten).", "Saves as regular saves (see save files below).") :
+		                                        sg::L("Speichert als Autosave11, 12, ... (rotierend, im Ladenmenue als AUTO).", "Saves as Autosave11, 12, ... (rotating, shown as AUTO in the load menu)."));
 
 		SeparatorText(sg::L("Schnellspeichern", "Quicksave"));
 		Toggle(sg::L("Schnellspeichern (F5) zurueckhalten, solange es nicht sicher ist", "Hold quicksave (F5) back while it is not safe"), sg::g_guardQuicksave);
@@ -157,6 +159,13 @@ namespace
 			TextDisabled("%s", sg::L("Engine Fixes macht aus Schnellspeichern normale Spielstaende - SaveGuard ebenso.",
 				"Engine Fixes turns quicksaves into regular saves - SaveGuard does the same."));
 		}
+
+		SeparatorText(sg::L("Speicherdateien", "Save files"));
+		Toggle(sg::L("Normale Spielstaende statt Autosave / Quicksave", "Regular saves instead of autosave / quicksave"), sg::g_regularSaves);
+		TextDisabled("%s", sg::L("Autospeichern und zurueckgehaltenes Schnellspeichern schreiben dann jedes Mal einen neuen normalen Spielstand "
+								 "(Save<Nr>), wie das Speichern-Menue. Diese werden nie rotiert oder geloescht - alte Spielstaende selbst aufraeumen.",
+			"Autosaves and held-back quicksaves then write a new regular save every time (Save<No.>), like the Save menu. These are "
+			"never rotated or removed - clean up old saves yourself."));
 
 		SeparatorText(sg::L("Autospeichern - Zustand", "Autosave - state"));
 		Text(sg::L("Zustand: %s", "State: %s"), (s.autoSaveState == "bereit" || s.autoSaveState == "ready") ? sg::L("bereit", "ready") : s.autoSaveState.c_str());

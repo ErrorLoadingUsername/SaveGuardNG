@@ -12,9 +12,10 @@ Papyrus mods send their mod events through SKSE objects (`ModEvent.Create` ... `
 - **Live save state** - safe / running / danger; short-lived objects only count after one second.
 - **Notifications** when the state changes, optionally when the pause menu opens.
 - **Quicksave guard** - F5 is held back while it is not safe (and while sleeping/waiting) and done as soon as it is safe.
-- **Smart autosaves** - after loading screens, sleep/wait, level up, completed journal quests, or every X minutes of play; only when safe and not in combat, optionally not during scenes, sneaking, riding or jail.
+- **Smart autosaves** - after loading screens, sleep/wait, level up, completed journal quests, or every X minutes of play; only when safe and not in combat, optionally not during scenes, sneaking, riding or jail, or only inside (interior cells).
 - **No saving while sleeping or waiting** - protects against plugins that must not be saved in that window.
 - **Rotating slots** `Autosave11`, `Autosave12` ... with the game's naming scheme (shown as AUTO in the load menu).
+- **Regular saves** (optional): autosaves and held-back quicksaves as regular saves `Save<N>` instead of `Autosave11 ...` / `Quicksave0`; never rotated or removed.
 - **Deutsch / English**, log with the open objects and the scripts that created them.
 
 Settings: `Documents\My Games\Skyrim Special Edition\SKSE\SaveGuardNG.ini` (created on first start, English comments).
