@@ -15,7 +15,7 @@ Papyrus mods send their mod events through SKSE objects (`ModEvent.Create` ... `
 - **Smart autosaves** - after loading screens, sleep/wait, level up, completed journal quests, or every X minutes of play; only when safe and not in combat, optionally not during scenes, sneaking, riding or jail, or only inside (interior cells).
 - **No saving while sleeping or waiting** - protects against plugins that must not be saved in that window.
 - **Rotating slots** `Autosave11`, `Autosave12` ... with the game's naming scheme (shown as AUTO in the load menu).
-- **Regular saves** (optional): autosaves and held-back quicksaves as regular saves `Save<N>` instead of `Autosave11 ...` / `Quicksave0`; never rotated or removed.
+- **Regular saves** (optional): autosaves and quicksaves (F5) as regular saves `Save<N>` instead of `Autosave11 ...` / `Quicksave0`; never rotated or removed.
 - **Deutsch / English**, log with the open objects and the scripts that created them.
 
 Settings: `Documents\My Games\Skyrim Special Edition\SKSE\SaveGuardNG.ini` (created on first start, English comments).

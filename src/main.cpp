@@ -1200,6 +1200,12 @@ namespace
 						"SaveGuard: quicksave postponed - saving as soon as it is safe"));
 					return true;  // swallow the key, we save later
 				}
+				if (sg::g_regularSaves) {
+					// setting "regular saves": F5 becomes a regular save (Save<N>) too, not only a held-back one
+					SKSE::log::info("[quicksave] safe - saving right away as a regular save");
+					RequestSave(SaveKind::kQuick, sg::L("Schnellspeichern", "quicksave"));
+					return true;  // swallow the key, the save follows on the next check
+				}
 				SKSE::log::info("[quicksave] safe - saving right away");
 				RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: sicher - schnellgespeichert", "SaveGuard: safe - quicksaved"));
 			}
@@ -1580,7 +1586,7 @@ namespace sg
 			 << "; hold quicksave (F5) back while saving is not safe and save as soon as it is\n"
 			 << "guardQuicksave=" << int(g_guardQuicksave.load()) << "\n"
 			 << "\n[SaveFiles]\n"
-			 << "; 1 = autosaves and held-back quicksaves are written as regular saves (Save<N>, like the game's Save menu)\n"
+			 << "; 1 = autosaves and quicksaves (F5, also held-back ones) are written as regular saves (Save<N>, like the game's Save menu)\n"
 			 << "; instead of Autosave11, 12 ... and Quicksave0. Regular saves are never rotated or removed by SaveGuard.\n"
 			 << "regularSaves=" << int(g_regularSaves.load()) << "\n"
 			 << "\n[Compatibility]\n"

@@ -162,9 +162,9 @@ namespace
 
 		SeparatorText(sg::L("Speicherdateien", "Save files"));
 		Toggle(sg::L("Normale Spielstaende statt Autosave / Quicksave", "Regular saves instead of autosave / quicksave"), sg::g_regularSaves);
-		TextDisabled("%s", sg::L("Autospeichern und zurueckgehaltenes Schnellspeichern schreiben dann jedes Mal einen neuen normalen Spielstand "
+		TextDisabled("%s", sg::L("Autospeichern und Schnellspeichern (F5) schreiben dann jedes Mal einen neuen normalen Spielstand "
 								 "(Save<Nr>), wie das Speichern-Menue. Diese werden nie rotiert oder geloescht - alte Spielstaende selbst aufraeumen.",
-			"Autosaves and held-back quicksaves then write a new regular save every time (Save<No.>), like the Save menu. These are "
+			"Autosaves and quicksaves (F5) then write a new regular save every time (Save<No.>), like the Save menu. These are "
 			"never rotated or removed - clean up old saves yourself."));
 
 		SeparatorText(sg::L("Autospeichern - Zustand", "Autosave - state"));
