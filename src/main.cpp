@@ -288,7 +288,7 @@ namespace
 
 		if (!g_skseBase) {
 			SKSE::log::error("SKSE runtime DLL not found - SaveGuard disabled");
-			SetInfo(false, sg::L("SKSE-DLL nicht gefunden - Plugin liest nichts.", "SKSE DLL not found - plugin reads nothing."));
+			SetInfo(false, sg::L("SKSE-DLL nicht gefunden - Plugin liest nichts.", "SKSE DLL not found - plugin reads nothing.", "未找到 SKSE DLL —— 插件不会读取任何数据。"));
 			return false;
 		}
 		if (REL::Module::IsVR() || g_skseName.rfind("sksevr", 0) == 0) {
@@ -304,7 +304,7 @@ namespace
 		const auto  address    = FindStorageByRTTI(g_skseBase, candidates);
 		if (!address) {
 			SKSE::log::error("SKSEPersistentObjectStorage not found ({} candidate(s)) - SaveGuard disabled", candidates);
-			SetInfo(false, std::string(sg::L("SKSE-Objektspeicher nicht gefunden - Plugin liest nichts. ", "SKSE object storage not found - plugin reads nothing. ")) + g_versions);
+			SetInfo(false, std::string(sg::L("SKSE-Objektspeicher nicht gefunden - Plugin liest nichts. ", "SKSE object storage not found - plugin reads nothing. ", "未找到 SKSE 对象存储 —— 插件不会读取任何数据。")) + g_versions);
 			return false;
 		}
 
@@ -315,7 +315,7 @@ namespace
 		                    (storage->freeBegin <= storage->freeEnd && storage->freeEnd <= storage->freeCap);
 		if (!vecOk || !freeOk) {
 			SKSE::log::error("storage vectors look wrong - SaveGuard disabled");
-			SetInfo(false, sg::L("SKSE-Objektspeicher sieht unerwartet aus - Plugin liest nichts.", "SKSE object storage looks unexpected - plugin reads nothing."));
+			SetInfo(false, sg::L("SKSE-Objektspeicher sieht unerwartet aus - Plugin liest nichts.", "SKSE object storage looks unexpected - plugin reads nothing.", "SKSE 对象存储结构异常 —— 插件不会读取任何数据。"));
 			return false;
 		}
 
@@ -323,8 +323,8 @@ namespace
 		g_storageRVA = address - g_skseBase;
 		char rva[32];
 		std::snprintf(rva, sizeof(rva), "+%llX", static_cast<unsigned long long>(g_storageRVA));
-		SetInfo(true, g_versions + sg::L(" erkannt, Objektspeicher bei ", " detected, object storage at ") + g_skseName + rva +
-			". Log: " + (g_logPath.empty() ? std::string(sg::L("<kein Log>", "<no log>")) : g_logPath.string()));
+		SetInfo(true, g_versions + sg::L(" erkannt, Objektspeicher bei ", " detected, object storage at ", " 已识别，对象存储位于 ") + g_skseName + rva +
+			". Log: " + (g_logPath.empty() ? std::string(sg::L("<kein Log>", "<no log>", "<无日志>")) : g_logPath.string()));
 		SKSE::log::info("{}: SKSEPersistentObjectStorage at {}{}, {} slot(s)", g_versions, g_skseName, rva,
 			static_cast<std::size_t>(storage->end - storage->begin));
 		return true;
@@ -395,7 +395,7 @@ namespace
 			if (o.script.empty()) {
 				if (auto it = g_scripts.find(Key(o)); it != g_scripts.end()) {
 					if (!it->second.empty()) {
-						o.script = it->second + sg::L(" (beendet)", " (finished)");
+						o.script = it->second + sg::L(" (beendet)", " (finished)", "（已结束）");
 					}
 				} else {
 					g_scripts.emplace(Key(o), std::string{});  // too late to see it, do not ask again
@@ -488,9 +488,9 @@ namespace
 			{
 				std::scoped_lock l(g_statusMutex);
 				g_status.savesRescued++;
-				g_status.lastRescue = NowString() + " - " + std::to_string(stale) + sg::L(" Objekt(e)", " object(s)");
+				g_status.lastRescue = NowString() + " - " + std::to_string(stale) + sg::L(" Objekt(e)", " object(s)", " 个对象");
 			}
-			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Absturz beim Speichern verhindert", "SaveGuard: save crash prevented"));
+			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Absturz beim Speichern verhindert", "SaveGuard: save crash prevented", "SaveGuard：已阻止存档崩溃"));
 			SKSE::log::warn("[save] {} STALE object(s) defused right before saving (this save would have crashed), {} finished, {} running left alone",
 				stale, finished, running);
 		} else if (finished) {
@@ -506,7 +506,7 @@ namespace
 
 	const char* StateText(StackState a_state)
 	{
-		return a_state == StackState::kAlive ? sg::L("laeuft", "running") : a_state == StackState::kStale ? sg::L("gefahr", "danger") : sg::L("beendet", "finished");
+		return a_state == StackState::kAlive ? sg::L("laeuft", "running", "运行中") : a_state == StackState::kStale ? sg::L("gefahr", "danger", "危险") : sg::L("beendet", "finished", "已结束");
 	}
 
 	// level: 0 safe, 1 wait, 2 danger
@@ -514,9 +514,9 @@ namespace
 	{
 		std::scoped_lock l(g_statusMutex);
 		g_status.level     = a_level;
-		g_status.overall   = a_level == 2 ? sg::L("Absturzgefahr - jetzt nicht speichern", "Crash risk - do not save now") :
-		                     a_level == 1 ? sg::L("Kurz warten - ein Skript arbeitet noch", "Wait a moment - a script is still working") :
-		                                    sg::L("Speichern sicher", "Safe to save");
+		g_status.overall   = a_level == 2 ? sg::L("Absturzgefahr - jetzt nicht speichern", "Crash risk - do not save now", "有崩溃风险 —— 现在别存档") :
+		                     a_level == 1 ? sg::L("Kurz warten - ein Skript arbeitet noch", "Wait a moment - a script is still working", "等一下 —— 还有脚本在运行") :
+		                                    sg::L("Speichern sicher", "Safe to save", "可以安全存档");
 		g_status.lastCheck = NowString();
 		g_status.slots     = g_storage ? static_cast<std::size_t>(g_storage->end - g_storage->begin) : 0;
 		g_status.checks++;
@@ -569,15 +569,15 @@ namespace
 			return;
 		}
 		if (!g_storage) {
-			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: inaktiv (andere SKSE-Version)", "SaveGuard: inactive (different SKSE version)"));
+			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: inaktiv (andere SKSE-Version)", "SaveGuard: inactive (different SKSE version)", "SaveGuard：未启用（SKSE 版本不同）"));
 		} else if (stale > 0) {
-			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Absturzgefahr - jetzt nicht speichern", "SaveGuard: crash risk - do not save now"));
+			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Absturzgefahr - jetzt nicht speichern", "SaveGuard: crash risk - do not save now", "SaveGuard：有崩溃风险 —— 现在别存档"));
 		} else if (alive > 0) {
 			const auto it  = std::find_if(open.begin(), open.end(), [](auto& o) { return o.state == StackState::kAlive; });
-			std::string msg = std::string(sg::L("SaveGuard: kurz warten - ", "SaveGuard: wait a moment - ")) + ShortScript(*it) + sg::L(" arbeitet noch", " is still working");
+			std::string msg = std::string(sg::L("SaveGuard: kurz warten - ", "SaveGuard: wait a moment - ", "SaveGuard：请稍等 —— ")) + ShortScript(*it) + sg::L(" arbeitet noch", " is still working", " 仍在运行");
 			RE::SendHUDMessage::ShowHUDMessage(msg.c_str());
 		} else {
-			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Speichern sicher", "SaveGuard: safe to save"));
+			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Speichern sicher", "SaveGuard: safe to save", "SaveGuard：可以安全存档"));
 		}
 	}
 
@@ -750,7 +750,7 @@ namespace
 		if (a_kind == SaveKind::kQuick) {
 			g_pending.kind = SaveKind::kQuick;
 		}
-		SetAutoState(std::string(sg::L("wartet: ", "waiting: ")) + g_pending.reason);
+		SetAutoState(std::string(sg::L("wartet: ", "waiting: ", "等待中：")) + g_pending.reason);
 		SKSE::log::info("[{}] {} - saving once it is safe", a_kind == SaveKind::kQuick ? "quicksave" : "autosave", a_reason);
 	}
 
@@ -765,7 +765,7 @@ namespace
 		if (!g_inGame || now < g_ignoreLoadingUntil || !sg::g_autoSave) {
 			return;  // loading screens before the first game load do not count
 		}
-		RequestSave(SaveKind::kAuto, sg::L("Zellenwechsel", "cell change"));
+		RequestSave(SaveKind::kAuto, sg::L("Zellenwechsel", "cell change", "切换场景"));
 	}
 
 	void OnSleepWaitMenu(bool a_opening)
@@ -783,7 +783,7 @@ namespace
 		g_sleepStartDays  = -1.0f;
 		// only when time actually passed (at least half an hour)
 		if (sg::g_autoSleepWait && start >= 0.0f && calendar->GetDaysPassed() - start > 0.5f / 24.0f) {
-			RequestSave(SaveKind::kAuto, sg::L("Schlafen/Warten", "sleep/wait"));
+			RequestSave(SaveKind::kAuto, sg::L("Schlafen/Warten", "sleep/wait", "睡眠/等待"));
 		}
 	}
 
@@ -925,26 +925,26 @@ namespace
 	const char* AutoSaveBlocker(RE::PlayerCharacter* a_player)
 	{
 		if (a_player->IsInCombat()) {
-			return sg::L("Kampf", "combat");
+			return sg::L("Kampf", "combat", "战斗中");
 		}
 		if (sg::g_autoSkipScenes && SceneRunning()) {
 			g_lastScene = Clock::now();
-			return sg::L("OStim-Szene", "OStim scene");
+			return sg::L("OStim-Szene", "OStim scene", "OStim 场景");
 		}
 		if (sg::g_autoSkipScenes && Clock::now() - g_lastScene < 5s) {
-			return sg::L("Szene / Steuerung gesperrt", "scene / controls disabled");
+			return sg::L("Szene / Steuerung gesperrt", "scene / controls disabled", "场景中 / 操作被锁定");
 		}
 		if (sg::g_autoSkipSneak && a_player->IsSneaking()) {
-			return sg::L("Schleichen", "sneaking");
+			return sg::L("Schleichen", "sneaking", "潜行中");
 		}
 		if (sg::g_autoSkipMount && a_player->IsOnMount()) {
-			return sg::L("Reiten", "riding");
+			return sg::L("Reiten", "riding", "骑乘中");
 		}
 		if (sg::g_autoSkipJail && InJail(a_player)) {
-			return sg::L("Gefaengnis", "jail");
+			return sg::L("Gefaengnis", "jail", "监狱中");
 		}
 		if (sg::g_autoOnlyInterior && !InInterior(a_player)) {
-			return sg::L("draussen (nur innen speichern)", "outside (save only inside)");
+			return sg::L("draussen (nur innen speichern)", "outside (save only inside)", "室外（已设为仅室内存档）");
 		}
 		return nullptr;
 	}
@@ -964,11 +964,11 @@ namespace
 				std::scoped_lock l(g_statusMutex);
 				g_status.autoSavesSkipped++;
 			}
-			SetAutoState(std::string(sg::L("uebersprungen (nicht rechtzeitig sicher): ", "skipped (not safe in time): ")) + g_pending.reason);
+			SetAutoState(std::string(sg::L("uebersprungen (nicht rechtzeitig sicher): ", "skipped (not safe in time): ", "已跳过（未及时变安全）：")) + g_pending.reason);
 			SKSE::log::info("[{}] {}: skipped, not possible within {} s", quick ? "quicksave" : "autosave", g_pending.reason, timeout);
 			if (sg::g_notifyBackground || quick) {
-				RE::SendHUDMessage::ShowHUDMessage(quick ? sg::L("SaveGuard: Schnellspeichern abgebrochen (nicht sicher)", "SaveGuard: quicksave cancelled (not safe)") :
-				                              sg::L("SaveGuard: Autospeichern uebersprungen (nicht sicher)", "SaveGuard: autosave skipped (not safe)"));
+				RE::SendHUDMessage::ShowHUDMessage(quick ? sg::L("SaveGuard: Schnellspeichern abgebrochen (nicht sicher)", "SaveGuard: quicksave cancelled (not safe)", "SaveGuard：已取消快速存档（不安全）") :
+				                              sg::L("SaveGuard: Autospeichern uebersprungen (nicht sicher)", "SaveGuard: autosave skipped (not safe)", "SaveGuard：已跳过自动存档（不安全）"));
 			}
 			g_pending = {};
 			return;
@@ -981,7 +981,7 @@ namespace
 		}
 		auto player = RE::PlayerCharacter::GetSingleton();
 		if (!player || player->IsDead()) {
-			SetAutoState(sg::L("wartet (Spieler tot)", "waiting (player dead)"));
+			SetAutoState(sg::L("wartet (Spieler tot)", "waiting (player dead)", "等待中（玩家已死亡）"));
 			return;
 		}
 		if (g_resting) {
@@ -993,17 +993,16 @@ namespace
 				SKSE::log::warn("[rest] sleep/wait never sent its stop event - saving may be unsafe for plugins that track it");
 				if (!g_restWarned) {
 					g_restWarned = true;
-					RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Schlafen/Warten nicht sauber beendet - Spiel neu starten empfohlen",
-						"SaveGuard: sleep/wait did not end cleanly - restarting the game is recommended"));
+					RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Schlafen/Warten nicht sauber beendet - Spiel neu starten empfohlen", "SaveGuard: sleep/wait did not end cleanly - restarting the game is recommended", "SaveGuard：睡眠/等待未正常结束 —— 建议重启游戏"));
 				}
 			} else {
-				SetAutoState(sg::L("wartet (Schlafen/Warten laeuft)", "waiting (sleep/wait in progress)"));
+				SetAutoState(sg::L("wartet (Schlafen/Warten laeuft)", "waiting (sleep/wait in progress)", "等待中（睡眠/等待进行中）"));
 				return;
 			}
 		}
 		if (!quick) {
 			if (const auto why = AutoSaveBlocker(player)) {
-				SetAutoState(std::string(sg::L("wartet (", "waiting (")) + why + ")");
+				SetAutoState(std::string(sg::L("wartet (", "waiting (", "等待中（")) + why + ")");
 				return;
 			}
 		}
@@ -1015,7 +1014,7 @@ namespace
 			stale += o.state == StackState::kStale;
 		}
 		if (stale || alive) {
-			SetAutoState(stale ? sg::L("wartet (Absturzgefahr)", "waiting (crash risk)") : sg::L("wartet (ein Skript arbeitet noch)", "waiting (a script is still working)"));
+			SetAutoState(stale ? sg::L("wartet (Absturzgefahr)", "waiting (crash risk)", "等待中（有崩溃风险）") : sg::L("wartet (ein Skript arbeitet noch)", "waiting (a script is still working)", "等待中（还有脚本在运行）"));
 			return;
 		}
 
@@ -1052,7 +1051,7 @@ namespace
 		if (!saveImpl(manager, 2, 0, name.c_str())) {
 			if (g_pending.attempts < kMaxSaveAttempts) {
 				g_pending.retryAt = Clock::now() + 5s;
-				SetAutoState(sg::L("wartet (Spiel hat Speichern abgelehnt, neuer Versuch)", "waiting (the game refused to save, trying again)"));
+				SetAutoState(sg::L("wartet (Spiel hat Speichern abgelehnt, neuer Versuch)", "waiting (the game refused to save, trying again)", "等待中（游戏拒绝存档，正在重试）"));
 				SKSE::log::warn("[save] the game refused to save {} - trying again in 5 s (attempt {}/{})", name, g_pending.attempts, kMaxSaveAttempts);
 			} else {
 				SKSE::log::warn("[save] the game refused to save {} {} times - giving up", name, kMaxSaveAttempts);
@@ -1060,9 +1059,9 @@ namespace
 					std::scoped_lock l(g_statusMutex);
 					g_status.savesBlocked++;
 				}
-				SetAutoState(sg::L("Spiel hat Speichern abgelehnt", "the game refused to save"));
-				RE::SendHUDMessage::ShowHUDMessage(quick ? sg::L("SaveGuard: Schnellspeichern nicht moeglich (vom Spiel abgelehnt)", "SaveGuard: quicksave not possible (refused by the game)") :
-				                      sg::L("SaveGuard: Autospeichern nicht moeglich (vom Spiel abgelehnt)", "SaveGuard: autosave not possible (refused by the game)"));
+				SetAutoState(sg::L("Spiel hat Speichern abgelehnt", "the game refused to save", "游戏拒绝存档"));
+				RE::SendHUDMessage::ShowHUDMessage(quick ? sg::L("SaveGuard: Schnellspeichern nicht moeglich (vom Spiel abgelehnt)", "SaveGuard: quicksave not possible (refused by the game)", "SaveGuard：无法快速存档（被游戏拒绝）") :
+				                      sg::L("SaveGuard: Autospeichern nicht moeglich (vom Spiel abgelehnt)", "SaveGuard: autosave not possible (refused by the game)", "SaveGuard：无法自动存档（被游戏拒绝）"));
 				g_pending = {};
 			}
 			return;
@@ -1081,14 +1080,14 @@ namespace
 			std::scoped_lock l(g_statusMutex);
 			g_status.autoSaves++;
 			g_status.lastAutoSave  = NowString() + "  " + prefix + "  (" + g_pending.reason + ")";
-			g_status.autoSaveState = sg::L("bereit", "ready");
+			g_status.autoSaveState = sg::L("bereit", "ready", "就绪");
 		}
 		g_pending = {};
 		sg::SaveSettings();  // remembers the slot index
 		if (sg::g_notifyBackground || quick) {
-			RE::SendHUDMessage::ShowHUDMessage(sg::g_regularSaves ? sg::L("SaveGuard: gespeichert", "SaveGuard: saved") :
-			                                   quick              ? sg::L("SaveGuard: schnellgespeichert", "SaveGuard: quicksaved") :
-			                                                        sg::L("SaveGuard: automatisch gespeichert", "SaveGuard: autosaved"));
+			RE::SendHUDMessage::ShowHUDMessage(sg::g_regularSaves ? sg::L("SaveGuard: gespeichert", "SaveGuard: saved", "SaveGuard：已存档") :
+			                                   quick              ? sg::L("SaveGuard: schnellgespeichert", "SaveGuard: quicksaved", "SaveGuard：已快速存档") :
+			                                                        sg::L("SaveGuard: automatisch gespeichert", "SaveGuard: autosaved", "SaveGuard：已自动存档"));
 		}
 	}
 
@@ -1136,7 +1135,7 @@ namespace
 			g_pending.since    = Clock::now();
 			g_pending.attempts = g_verify.attempts;
 			SKSE::log::info("[save] trying again (attempt {}/{})", g_verify.attempts + 1, kMaxSaveAttempts);
-			SetAutoState(sg::L("wartet (letzter Versuch nicht geschrieben, neuer Versuch)", "waiting (last attempt not written, trying again)"));
+			SetAutoState(sg::L("wartet (letzter Versuch nicht geschrieben, neuer Versuch)", "waiting (last attempt not written, trying again)", "等待中（上次未写入成功，正在重试）"));
 			return;
 		}
 		{
@@ -1145,12 +1144,12 @@ namespace
 			if (g_status.autoSaves) {
 				g_status.autoSaves--;
 			}
-			g_status.lastAutoSave  = NowString() + "  " + g_verify.prefix + sg::L("  NICHT geschrieben (", "  NOT written (") + g_verify.reason + ")";
-			g_status.autoSaveState = sg::L("letztes Speichern wurde blockiert", "last save was blocked");
+			g_status.lastAutoSave  = NowString() + "  " + g_verify.prefix + sg::L("  NICHT geschrieben (", "  NOT written (", "  未写入（") + g_verify.reason + ")";
+			g_status.autoSaveState = sg::L("letztes Speichern wurde blockiert", "last save was blocked", "上次存档被阻止");
 		}
 		RE::SendHUDMessage::ShowHUDMessage(g_verify.quick ?
-			sg::L("SaveGuard: Schnellspeichern wurde NICHT ausgefuehrt (von einer anderen Mod blockiert?)", "SaveGuard: quicksave was NOT made (blocked by another mod?)") :
-			sg::L("SaveGuard: Autospeichern wurde NICHT ausgefuehrt (von einer anderen Mod blockiert?)", "SaveGuard: autosave was NOT made (blocked by another mod?)"));
+			sg::L("SaveGuard: Schnellspeichern wurde NICHT ausgefuehrt (von einer anderen Mod blockiert?)", "SaveGuard: quicksave was NOT made (blocked by another mod?)", "SaveGuard：快速存档未执行（被其他模组阻止？）") :
+			sg::L("SaveGuard: Autospeichern wurde NICHT ausgefuehrt (von einer anderen Mod blockiert?)", "SaveGuard: autosave was NOT made (blocked by another mod?)", "SaveGuard：自动存档未执行（被其他模组阻止？）"));
 	}
 
 	// every unpaused check: scene tracking and the timer
@@ -1171,7 +1170,7 @@ namespace
 			g_playMs += delta;
 			if (g_playMs >= static_cast<std::int64_t>(minutes) * 60000) {
 				g_playMs = 0;
-				RequestSave(SaveKind::kAuto, sg::L("Zeitintervall", "timer"));
+				RequestSave(SaveKind::kAuto, sg::L("Zeitintervall", "timer", "计时"));
 			}
 		} else {
 			g_playMs = 0;
@@ -1195,19 +1194,18 @@ namespace
 					stale += o.state == StackState::kStale;
 				}
 				if (stale || alive || g_resting) {
-					RequestSave(SaveKind::kQuick, sg::L("Schnellspeichern", "quicksave"));
-					RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Schnellspeichern verschoben - speichert, sobald es sicher ist",
-						"SaveGuard: quicksave postponed - saving as soon as it is safe"));
+					RequestSave(SaveKind::kQuick, sg::L("Schnellspeichern", "quicksave", "快速存档"));
+					RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Schnellspeichern verschoben - speichert, sobald es sicher ist", "SaveGuard: quicksave postponed - saving as soon as it is safe", "SaveGuard：快速存档已延后 —— 一旦安全就立即存档"));
 					return true;  // swallow the key, we save later
 				}
 				if (sg::g_regularSaves) {
 					// setting "regular saves": F5 becomes a regular save (Save<N>) too, not only a held-back one
 					SKSE::log::info("[quicksave] safe - saving right away as a regular save");
-					RequestSave(SaveKind::kQuick, sg::L("Schnellspeichern", "quicksave"));
+					RequestSave(SaveKind::kQuick, sg::L("Schnellspeichern", "quicksave", "快速存档"));
 					return true;  // swallow the key, the save follows on the next check
 				}
 				SKSE::log::info("[quicksave] safe - saving right away");
-				RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: sicher - schnellgespeichert", "SaveGuard: safe - quicksaved"));
+				RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: sicher - schnellgespeichert", "SaveGuard: safe - quicksaved", "SaveGuard：安全 —— 已快速存档"));
 			}
 		}
 		return g_quickSaveOriginal(a_this, a_event);
@@ -1263,7 +1261,7 @@ namespace
 		{
 			if (sg::g_autoLevelUp) {
 				if (auto tasks = SKSE::GetTaskInterface()) {
-					tasks->AddTask([] { RequestSave(SaveKind::kAuto, sg::L("Stufenaufstieg", "level up")); });
+					tasks->AddTask([] { RequestSave(SaveKind::kAuto, sg::L("Stufenaufstieg", "level up", "升级")); });
 				}
 			}
 			return RE::BSEventNotifyControl::kContinue;
@@ -1295,7 +1293,7 @@ namespace
 					if (type == RE::QUEST_DATA::Type::kNone || type == RE::QUEST_DATA::Type::kMiscellaneous) {
 						return;
 					}
-					RequestSave(SaveKind::kAuto, sg::L("Quest abgeschlossen", "quest completed"));
+					RequestSave(SaveKind::kAuto, sg::L("Quest abgeschlossen", "quest completed", "任务完成"));
 				});
 			}
 			return RE::BSEventNotifyControl::kContinue;
@@ -1353,7 +1351,7 @@ namespace
 				g_status.dangers++;
 			}
 			if (sg::g_notifyBackground) {
-				RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Absturzgefahr - jetzt nicht speichern", "SaveGuard: crash risk - do not save now"));
+				RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Absturzgefahr - jetzt nicht speichern", "SaveGuard: crash risk - do not save now", "SaveGuard：有崩溃风险 —— 现在别存档"));
 			}
 			CheckAndNotify("watch: danger", false);  // writes the details to the log
 		}
@@ -1369,7 +1367,7 @@ namespace
 		// "safe" only after a real unsafe phase (danger, or waiting for a second or more)
 		if (now == Overall::kSafe && g_last != Overall::kSafe &&
 			(g_last == Overall::kDanger || tick - g_unsafeSince >= 1s) && sg::g_notifyBackground) {
-			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Speichern sicher", "SaveGuard: safe to save"));
+			RE::SendHUDMessage::ShowHUDMessage(sg::L("SaveGuard: Speichern sicher", "SaveGuard: safe to save", "SaveGuard：可以安全存档"));
 		}
 		g_last = now;
 
@@ -1474,6 +1472,7 @@ namespace
 	{
 		std::ifstream file(g_iniPath);
 		std::string   line;
+		bool          languageSeen = false;  // language= wins over the old english= key
 		while (std::getline(file, line)) {
 			const auto eq = line.find('=');
 			if (line.empty() || line[0] == ';' || line[0] == '[' || eq == std::string::npos) {
@@ -1521,8 +1520,17 @@ namespace
 				sg::g_regularSaves = value != 0;
 			} else if (key == "warningsOnlyWithOtherSaveMods") {
 				sg::g_respectOtherSavers = value != 0;
+			} else if (key == "language") {
+				sg::g_language = std::clamp(value, 0, 2);
+				sg::g_english  = sg::g_language == 1;
+				languageSeen   = true;
 			} else if (key == "english") {
-				sg::g_english = value != 0;
+				// old ini files: 0 = German, 1 = English. A language= key wins when both exist - the ini
+				// writes english= after language=, so without this check Chinese turned into German.
+				if (!languageSeen) {
+					sg::g_english  = value != 0;
+					sg::g_language = value != 0 ? 1 : 0;
+				}
 			} else if (key == "autoSaveLastIndex") {
 				g_autoIndex = std::clamp(value, 0, 10);
 			}
@@ -1543,8 +1551,10 @@ namespace sg
 			 << "; Can also be changed in game: SKSE Menu Framework -> SaveGuard NG -> Status (written back here).\n"
 			 << "; Changes made in this file take effect at the next game start.\n"
 			 << "\n[General]\n"
-			 << "; language of the menu page and notifications: 0 = German, 1 = English\n"
-			 << "english=" << int(g_english.load()) << "\n"
+			 << "; language of the menu page and notifications: 0 = German, 1 = English, 2 = Simplified Chinese\n"
+			 << "language=" << g_language.load() << "\n"
+			 << "; old key, kept in sync with language= (0 = German, 1 = English); a language= line wins\n"
+			 << "english=" << int(g_language.load() == 1) << "\n"
 			 << "; in-game notification when the state changes (crash risk / safe to save)\n"
 			 << "notifyBackground=" << int(g_notifyBackground.load()) << "\n"
 			 << "; notification with the current state whenever the pause menu is opened\n"
@@ -1622,7 +1632,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 	g_iniPath = FindLogDir() / "SaveGuardNG.ini";
 	LoadSettings();
 	sg::SaveSettings();  // rewrite with all keys and comments (keeps the loaded values)
-	SetAutoState(sg::L("bereit", "ready"));
+	SetAutoState(sg::L("bereit", "ready", "就绪"));
 	SKSE::log::info("settings {}: autosave on cell change {}, {} slot(s), timeout {} s", AnonPath(g_iniPath),
 		sg::g_autoSave ? "on" : "off", sg::g_autoSaveSlots.load(), sg::g_autoSaveTimeout.load());
 

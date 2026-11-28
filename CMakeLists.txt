@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(SaveGuardNG VERSION 1.2.4.1 LANGUAGES CXX)
+project(SaveGuardNG VERSION 1.2.5 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,6 +24,10 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
 set_source_files_properties(src/win.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 target_include_directories(${PROJECT_NAME} PRIVATE include src)
 target_compile_options(${PROJECT_NAME} PRIVATE /EHa /W4 /permissive-)
+
+# The Simplified Chinese strings are stored as UTF-8 in the sources. Without /utf-8 MSVC
+# would read them with the system code page (GBK on a Chinese Windows) and mangle them.
+target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
 
 # Keep build paths out of the DLL: __FILE__ / std::source_location (log lines, asserts)
 # would otherwise embed the full path of every source and header file.

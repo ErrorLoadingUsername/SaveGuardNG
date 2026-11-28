@@ -16,7 +16,7 @@ Papyrus mods send their mod events through SKSE objects (`ModEvent.Create` ... `
 - **No saving while sleeping or waiting** - protects against plugins that must not be saved in that window.
 - **Rotating slots** `Autosave11`, `Autosave12` ... with the game's naming scheme (shown as AUTO in the load menu).
 - **Regular saves** (optional): autosaves and quicksaves (F5) as regular saves `Save<N>` instead of `Autosave11 ...` / `Quicksave0`; never rotated or removed.
-- **Deutsch / English**, log with the open objects and the scripts that created them.
+- **Deutsch / English / 简体中文** (Simplified Chinese contributed by lonswon), log with the open objects and the scripts that created them. Menu: Settings - Language; INI: `language=0/1/2` (0 = German, 1 = English, 2 = Simplified Chinese).
 
 Settings: `Documents\My Games\Skyrim Special Edition\SKSE\SaveGuardNG.ini` (created on first start, English comments).
 

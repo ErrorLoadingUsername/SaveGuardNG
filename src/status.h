@@ -80,9 +80,23 @@ namespace sg
 	inline bool WarningsOnly() { return g_otherSaverFound && g_respectOtherSavers; }
 
 	// pick the text for the current language
-	inline const char* L(const char* a_de, const char* a_en) { return g_english ? a_en : a_de; }
+	// 0 = German, 1 = English, 2 = Simplified Chinese
+	inline std::atomic<int> g_language{ 1 };
+
+	inline const char* L(const char* a_de, const char* a_en, const char* a_zh = nullptr)
+	{
+		switch (g_language.load()) {
+		case 0:
+			return a_de;
+		case 2:
+			return a_zh ? a_zh : a_en;  // fall back to English when a string has no Chinese text yet
+		default:
+			return a_en;
+		}
+	}
 
 	void SaveSettings();  // main.cpp, writes SaveGuard.ini
 
 	void RegisterMenu();  // ui.cpp
 }
+
